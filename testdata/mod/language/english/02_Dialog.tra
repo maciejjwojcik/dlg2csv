@@ -1,8 +1,20 @@
-// Used by 02_Dialog.d
-@200 = ~We meet again.~
-@210 = ~Tell me more.~
-@211 = ~All right, I'm done here.~
-@220 = ~Farewell.~
+// 02_Dialog.tra - strings referenced by 02_Dialog.d
 
-// Unused strings (must end up in strings.csv)
-@230 = ~[UNUSED] Not used anywhere, should be exported to strings.csv.~
+// AC#WOMAN states
+@200 = ~You look lost in these tunnels.~
+@201 = ~Careful. The sewers bite back.~
+@202 = ~Follow the markings on the wall.~
+@203 = ~Farewell, then.~
+@204 = ~Yes? What is it?~
+
+// Player replies from HELLO
+@210 = ~Tell me more.~
+@220 = ~I have to go.~
+@222 = ~Wait — one more thing.~
+
+// AC#OTHER state (same .d file)
+@400 = ~A different NPC appears.~
+@410 = ~Leave.~
+
+// Unused (must go to strings.csv)
+@230 = ~[UNUSED] Extra line not referenced by any .d.~

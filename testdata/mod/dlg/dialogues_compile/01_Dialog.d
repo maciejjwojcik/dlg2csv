@@ -1,12 +1,12 @@
-BEGIN ~DIALOG_01~
+BEGIN AC#TEST
 
-IF ~~ THEN BEGIN Start
+IF ~Global("AC#X","GLOBAL",1)~ THEN BEGIN START
   SAY @100
-  ++ @110 GOTO Who
+  ++ @110 EXTERN AC#TEST NEXT
   ++ @120 EXIT
 END
 
-IF ~~ THEN BEGIN Who
-  SAY @101
-  ++ ~Back to start.~ GOTO Start
+IF ~~ THEN BEGIN NEXT
+  SAY @102
+  DO ~SetGlobal("AC#X","GLOBAL",2)~ EXIT
 END
