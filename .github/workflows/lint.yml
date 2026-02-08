@@ -8,17 +8,18 @@ on:
 permissions:
   contents: read
 
-
 jobs:
   golangci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-      - uses: golangci/golangci-lint-action@v6
+
+      - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.4.0
           args: --timeout=5m --config=.golangci.yml
