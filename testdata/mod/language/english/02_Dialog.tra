@@ -1,0 +1,8 @@
+// Used by 02_Dialog.d
+@200 = ~We meet again.~
+@210 = ~Tell me more.~
+@211 = ~All right, I'm done here.~
+@220 = ~Farewell.~
+
+// Unused strings (must end up in strings.csv)
+@230 = ~[UNUSED] Not used anywhere, should be exported to strings.csv.~

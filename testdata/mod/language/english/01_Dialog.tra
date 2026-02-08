@@ -1,0 +1,12 @@
+// Used by 01_Dialog.d
+@100 = ~Hello there, stranger.~
+@101 = ~I'm just a humble guide.~
+@110 = ~Who are you?~
+@120 = ~Goodbye.~
+
+// Unused strings (must end up in strings.csv)
+@130 = ~[UNUSED] This line is not referenced by any .d file.~
+
+@131 = ~[UNUSED] Multiline example:
+Second line here.
+Third line with a literal escaped tilde: ~~.~

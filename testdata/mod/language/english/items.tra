@@ -1,0 +1,10 @@
+// No strings from this file are referenced in any .d file.
+// Entire file should be exported to strings.csv.
+
+@3000 = ~Potion of Testing~
+@3001 = ~A strange potion used only for dlg2csv parser tests.~
+
+@3002 = ~Scroll of Multiline~
+@3003 = ~This scroll description is multiline.
+It has a second line.
+And a third line with ~~ escaped tilde.~
