@@ -1,26 +1,30 @@
+//go:build golden
+
 package dlg2csv_test
 
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-// Export is the future public entry point.
-// It does NOT exist yet – this test defines the contract.
 func TestExport_Golden_DialogsAndStrings(t *testing.T) {
-	t.Skip("export not implemented yet")
-
 	outDir := t.TempDir()
 
 	err := Export(Options{
-		RepoPath: "testdata/mod",
+		RepoPath: filepath.Join("testdata", "mod"),
 		Language: "english",
 		OutDir:   outDir,
 	})
 	require.NoError(t, err)
+
+	normalize := func(b []byte) string {
+		s := string(b)
+		return strings.ReplaceAll(s, "\r\n", "\n")
+	}
 
 	// ---- dialogs/*.csv ----
 	expectedDialogsDir := filepath.Join("testdata", "expected", "dialogs")
@@ -33,7 +37,6 @@ func TestExport_Golden_DialogsAndStrings(t *testing.T) {
 		}
 
 		name := e.Name()
-
 		gotPath := filepath.Join(outDir, "dialogs", name)
 		wantPath := filepath.Join(expectedDialogsDir, name)
 
@@ -43,13 +46,7 @@ func TestExport_Golden_DialogsAndStrings(t *testing.T) {
 		want, err := os.ReadFile(wantPath)
 		require.NoError(t, err)
 
-		require.Equal(
-			t,
-			string(want),
-			string(got),
-			"dialog csv mismatch: %s",
-			name,
-		)
+		require.Equal(t, normalize(want), normalize(got), "dialog csv mismatch: %s", name)
 	}
 
 	// ---- strings.csv ----
@@ -59,10 +56,5 @@ func TestExport_Golden_DialogsAndStrings(t *testing.T) {
 	wantStrings, err := os.ReadFile(filepath.Join("testdata", "expected", "strings.csv"))
 	require.NoError(t, err)
 
-	require.Equal(
-		t,
-		string(wantStrings),
-		string(gotStrings),
-		"strings.csv mismatch",
-	)
+	require.Equal(t, normalize(wantStrings), normalize(gotStrings), "strings.csv mismatch")
 }
