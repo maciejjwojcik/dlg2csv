@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-func iptr(v int) *int       { return &v }
-func sptr(v string) *string { return &v }
-
 func TestParseReader_SimpleDialog(t *testing.T) {
 	input := `
 BEGIN AC#TEST
