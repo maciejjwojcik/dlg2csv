@@ -1,0 +1,14 @@
+// 01_Dialog.tra - strings referenced by 01_Dialog.d (basic IF/BEGIN)
+
+// Used by 01_Dialog.d
+@100 = ~Hello there, stranger.~
+@102 = ~All right. Let's move on.~
+@110 = ~Who are you?~
+@120 = ~Goodbye.~
+
+// Unused (must go to strings.csv)
+@101 = ~Second sentence that is not referenced in the basic .d test.~
+
+@131 = ~[UNUSED] Multiline:
+Line two.
+Line three with ~~ escaped tilde.~

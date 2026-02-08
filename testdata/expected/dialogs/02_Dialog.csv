@@ -1,0 +1,9 @@
+npc_name,dialogue_id,state,npc_strref,npc_text_en,pc_strref,pc_text_en,goto
+AC#WOMAN,AC#WOMAN,HELLO,@200,"You look lost in these tunnels.",,,
+JAHEIJ,AC#WOMAN,HELLO,@201,"Careful. The sewers bite back.",,,
+AC#WOMAN,AC#WOMAN,HELLO,@204,"Yes? What is it?",@210,"Tell me more.",EXTERN:AC#WOMAN:CONT
+,,,,,@220,"I have to go.",EXTERN:AC#WOMAN:BYE
+,,,,,@222,"Wait — one more thing.",EXTERN:AC#WOMAN:CONT
+AC#WOMAN,AC#WOMAN,CONT,@202,"Follow the markings on the wall.",,,EXTERN:AC#WOMAN:BYE
+AC#WOMAN,AC#WOMAN,BYE,@203,"Farewell, then.",,,EXIT
+AC#OTHER,AC#OTHER,START,@400,"A different NPC appears.",@410,"Leave.",EXIT
