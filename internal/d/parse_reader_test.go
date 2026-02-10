@@ -293,6 +293,423 @@ IF~~THEN REPLY @410 EXIT
 	}
 }
 
+func TestParseReader_BeginWithTildes(t *testing.T) {
+	input := `
+BEGIN ~AC#TEST~
+
+IF ~~ THEN BEGIN START
+  SAY @1
+  IF ~~ THEN REPLY @2 EXIT
+END
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+	if len(occ) != 2 {
+		t.Fatalf("expected 2 occurrences, got %d: %+v", len(occ), occ)
+	}
+	if occ[0].Dialog != "AC#TEST" || occ[0].State != "START" {
+		t.Fatalf("unexpected dialog/state: %+v", occ[0])
+	}
+}
+
+func TestParseReader_StateEntryCondition_PropagatesToSayAndContinuation(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+
+IF ~Global("X","GLOBAL",1)~ THEN BEGIN A
+  SAY @1
+  = @2
+  @3
+  IF ~~ THEN REPLY @10 EXIT
+END
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+	// Expect: SAY@1, @2, @3, REPLY@10 => 4
+	if len(occ) != 4 {
+		t.Fatalf("expected 4 occurrences, got %d: %+v", len(occ), occ)
+	}
+
+	for i := 0; i < 3; i++ {
+		if occ[i].Kind != KindNPC {
+			t.Fatalf("occ[%d] expected NPC, got: %+v", i, occ[i])
+		}
+		if occ[i].Condition != `Global("X","GLOBAL",1)` {
+			t.Fatalf("occ[%d] expected stateEntryCond to propagate, got: %q", i, occ[i].Condition)
+		}
+	}
+}
+
+func TestParseReader_NotesAccumulateAcrossCommentOnlyLinesAndInline(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+
+// a
+// b
+IF ~~ THEN BEGIN A
+  // c
+  SAY @1 // d
+  IF ~~ THEN REPLY @2 EXIT // e
+END
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	if len(occ) != 2 {
+		t.Fatalf("expected 2 occurrences, got %d: %+v", len(occ), occ)
+	}
+
+	// Notes attach to the next emitted occurrence and then reset.
+	// For SAY: should include a,b,c,d
+	want0 := []string{"a", "b", "c", "d"}
+	if !equalStringSlices(occ[0].Notes, want0) {
+		t.Fatalf("occ[0].Notes mismatch:\n got: %#v\nwant: %#v", occ[0].Notes, want0)
+	}
+
+	// For REPLY: should include e only
+	want1 := []string{"e"}
+	if !equalStringSlices(occ[1].Notes, want1) {
+		t.Fatalf("occ[1].Notes mismatch:\n got: %#v\nwant: %#v", occ[1].Notes, want1)
+	}
+}
+
+func TestParseReader_SplitLineComment_IgnoresDoubleSlashInsideTilde(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+
+IF ~~ THEN BEGIN A
+  // note before say
+  SAY @1 // outside comment ok
+  IF ~Global("X","GLOBAL",1)//not_comment~ THEN REPLY @2 EXIT // real comment
+END
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+	if len(occ) != 2 {
+		t.Fatalf("expected 2 occurrences, got %d: %+v", len(occ), occ)
+	}
+
+	if occ[1].Condition != `Global("X","GLOBAL",1)//not_comment` {
+		t.Fatalf("expected condition to preserve // inside ~ ~, got: %q", occ[1].Condition)
+	}
+	// Also ensure inline comment captured
+	want := []string{"real comment"}
+	if !equalStringSlices(occ[1].Notes, want) {
+		t.Fatalf("occ[1].Notes mismatch:\n got: %#v\nwant: %#v", occ[1].Notes, want)
+	}
+}
+
+func TestParseReader_CommentedOutWeiduCode_IsIgnoredAsNote(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+
+IF ~~ THEN BEGIN A
+  //IF ~~ THEN REPLY @999 EXIT
+  //==FOO @123
+  //@777
+  SAY @1
+END
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+	if len(occ) != 1 {
+		t.Fatalf("expected 1 occurrence, got %d: %+v", len(occ), occ)
+	}
+	if len(occ[0].Notes) != 0 {
+		t.Fatalf("expected no notes (commented-out code ignored), got: %#v", occ[0].Notes)
+	}
+}
+
+func TestParseReader_ReplyTargets_GOTO_Works(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+
+IF ~~ THEN BEGIN A
+  SAY @1
+  IF ~~ THEN REPLY @10 GOTO B
+END
+IF ~~ THEN BEGIN B
+  SAY @2
+END
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+	if len(occ) != 3 {
+		t.Fatalf("expected 3 occurrences, got %d: %+v", len(occ), occ)
+	}
+
+	reply := occ[1]
+	if reply.Kind != KindPC || reply.ToType != "GOTO" {
+		t.Fatalf("expected GOTO reply, got: %+v", reply)
+	}
+	if reply.ToDlg == nil || *reply.ToDlg != "AC#TEST" || reply.ToState == nil || *reply.ToState != "B" {
+		t.Fatalf("GOTO target mismatch: %+v", reply)
+	}
+}
+
+func TestParseReader_ReplyTargets_ExternParsing_CaseAndSpacing(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+IF ~~ THEN BEGIN A
+  SAY @1
+  IF ~~ THEN REPLY @10    extern   AC#TEST   B
+END
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+	if len(occ) != 2 {
+		t.Fatalf("expected 2 occurrences, got %d: %+v", len(occ), occ)
+	}
+	r := occ[1]
+	if r.ToType != "EXTERN" || r.ToDlg == nil || *r.ToDlg != "AC#TEST" || r.ToState == nil || *r.ToState != "B" {
+		t.Fatalf("extern target mismatch: %+v", r)
+	}
+}
+
+func TestParseReader_ChainBody_CanEndWithoutEND_OnExtern(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+
+CHAIN AC#TEST A
+@1
+EXTERN AC#TEST B
+
+CHAIN AC#TEST B
+@2
+END
+IF ~~ THEN REPLY @10 EXIT
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	// Expect: @1 (with auto EXTERN), @2, reply@10 => 3
+	if len(occ) != 3 {
+		t.Fatalf("expected 3 occurrences, got %d: %+v", len(occ), occ)
+	}
+	if occ[0].ToType != "EXTERN" || occ[0].ToDlg == nil || *occ[0].ToDlg != "AC#TEST" || occ[0].ToState == nil || *occ[0].ToState != "B" {
+		t.Fatalf("expected auto EXTERN on first chain text, got: %+v", occ[0])
+	}
+	// Ensure we got to parse next CHAIN + reply afterwards.
+	if occ[2].Kind != KindPC || occ[2].ToType != "EXIT" {
+		t.Fatalf("expected final reply EXIT, got: %+v", occ[2])
+	}
+}
+
+func TestParseReader_ChainBody_CanEndWithoutEND_OnExit(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+
+CHAIN AC#TEST A
+@1
+EXIT
+
+IF ~~ THEN BEGIN X
+  SAY @2
+END
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+	// Expect @1 (auto EXIT), then SAY @2 => 2
+	if len(occ) != 2 {
+		t.Fatalf("expected 2 occurrences, got %d: %+v", len(occ), occ)
+	}
+	if occ[0].ToType != "EXIT" {
+		t.Fatalf("expected auto EXIT, got: %+v", occ[0])
+	}
+}
+
+func TestParseReader_ChainHeader_BufferingMultilineIFThen(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+
+CHAIN IF ~Global("X","GLOBAL",1)
+  && Global("Y","GLOBAL",2)~ THEN AC#TEST A
+@1
+END
+IF ~~ THEN REPLY @10 EXIT
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+	// Expect @1 + reply => 2
+	if len(occ) != 2 {
+		t.Fatalf("expected 2 occurrences, got %d: %+v", len(occ), occ)
+	}
+	if occ[0].Kind != KindNPC || occ[0].State != "A" || occ[0].Dialog != "AC#TEST" {
+		t.Fatalf("unexpected first occurrence: %+v", occ[0])
+	}
+}
+
+func TestParseReader_ExtendBottom_TreatedAsInStateAndClosesOnEND(t *testing.T) {
+	input := `
+EXTEND_BOTTOM ~PGOND~ 0
+  SAY @1
+  IF ~~ THEN REPLY @10 GOTO X
+END
+
+BEGIN AC#TEST
+IF ~~ THEN BEGIN A
+  SAY @2
+END
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	// EXTEND: SAY @1, REPLY @10; then BEGIN: SAY @2 => 3
+	if len(occ) != 3 {
+		t.Fatalf("expected 3 occurrences, got %d: %+v", len(occ), occ)
+	}
+
+	if occ[0].Dialog != "PGOND" || occ[0].State != "0" {
+		t.Fatalf("extend dialog/state mismatch: %+v", occ[0])
+	}
+	if occ[1].Dialog != "PGOND" || occ[1].State != "0" || occ[1].ToType != "GOTO" {
+		t.Fatalf("extend reply mismatch: %+v", occ[1])
+	}
+
+	// Ensure END closed extend and didn't leak into following BEGIN
+	if occ[2].Dialog != "AC#TEST" || occ[2].State != "A" {
+		t.Fatalf("after extend, expected AC#TEST/A, got: %+v", occ[2])
+	}
+}
+
+func TestParseReader_ExtendTop_ParsesSameAsBottom(t *testing.T) {
+	input := `
+EXTEND_TOP ~ABC~ some_state
+  SAY @1
+END
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+	if len(occ) != 1 {
+		t.Fatalf("expected 1 occurrence, got %d: %+v", len(occ), occ)
+	}
+	if occ[0].Dialog != "ABC" || occ[0].State != "some_state" {
+		t.Fatalf("extend top dialog/state mismatch: %+v", occ[0])
+	}
+}
+
+func TestParseReader_ModeNormal_EndDoesNotCloseRegularState(t *testing.T) {
+	// In modeNormal, "END" only closes EXTEND_* (per code). Regular states close only in modeState.
+	input := `
+BEGIN AC#TEST
+
+IF ~~ THEN BEGIN A
+  SAY @1
+END
+IF ~~ THEN REPLY @10 EXIT
+`
+	_, err := ParseReader(strings.NewReader(input), "x.d")
+	if err == nil {
+		t.Fatalf("expected error: REPLY outside state because END in modeNormal doesn't close state blocks")
+	}
+	// error string should contain "REPLY outside state"
+	if !strings.Contains(err.Error(), "REPLY outside state") {
+		t.Fatalf("expected REPLY outside state error, got: %v", err)
+	}
+}
+
+func TestParseReader_Err_StateBeforeBegin(t *testing.T) {
+	input := `
+IF ~~ THEN BEGIN A
+  SAY @1
+END
+`
+	_, err := ParseReader(strings.NewReader(input), "x.d")
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "state defined before BEGIN") {
+		t.Fatalf("expected state defined before BEGIN, got: %v", err)
+	}
+}
+
+func TestParseReader_Err_SayOutsideState(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+SAY @1
+`
+	_, err := ParseReader(strings.NewReader(input), "x.d")
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "SAY outside state") {
+		t.Fatalf("expected SAY outside state, got: %v", err)
+	}
+}
+
+func TestParseReader_Err_ExternInChainBodyWithoutText(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+CHAIN AC#TEST A
+EXTERN AC#TEST B
+`
+	_, err := ParseReader(strings.NewReader(input), "x.d")
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "EXTERN in CHAIN body without preceding text") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseReader_Err_ExitInChainBodyWithoutText(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+CHAIN AC#TEST A
+EXIT
+`
+	_, err := ParseReader(strings.NewReader(input), "x.d")
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "EXIT in CHAIN body without preceding text") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseReader_StateMode_IgnoresDoExitLine(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+IF ~~ THEN BEGIN A
+  SAY @1
+  IF ~~ THEN DO ~SetGlobal("X","GLOBAL",1)~ EXIT
+  IF ~~ THEN REPLY @10 EXIT
+END
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+	// DO...EXIT should not create occurrence; we still get SAY + REPLY => 2
+	if len(occ) != 2 {
+		t.Fatalf("expected 2 occurrences, got %d: %+v", len(occ), occ)
+	}
+}
+
 func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

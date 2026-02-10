@@ -10,11 +10,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	helpers "github.com/maciejjwojcik/dlg2csv/internal/utils"
 )
 
 var (
-	reBeginDialog = regexp.MustCompile(`(?i)^\s*BEGIN\s+([A-Za-z0-9_#.\-]+)\s*$`)
-
 	// IF ~cond~ THEN BEGIN STATE
 	reBeginState = regexp.MustCompile(`(?i)^\s*IF\s*(~.*?~|~~)\s*THEN\s*BEGIN\s+([A-Za-z0-9_#.\-]+)\s*$`)
 
@@ -47,6 +47,9 @@ var (
 	// Capturing groups: m[1] = tra id
 	reChainLine = regexp.MustCompile(`^\s*@(\d+)\s*$`)
 
+	// "= @id" continuation line in one go (common WeiDU formatting)
+	reEqChainLine = regexp.MustCompile(`^\s*=\s*@(\d+)\s*$`)
+
 	// Interjection with IF:
 	//   ==JAHEIJ IF ~InParty("JAHEIRA")~ THEN @201
 	// Groups:
@@ -65,6 +68,17 @@ var (
 	reInterject = regexp.MustCompile(
 		`(?i)^\s*==\s*([A-Za-z0-9_#.\-]+)\s+@(\d+)\s*$`,
 	)
+
+	// EXTEND_BOTTOM ~PGOND~ 0
+	// EXTEND_TOP ~SOMEDLG~ some_state
+	// m[1] = dlg, m[2] = state
+	reExtend = regexp.MustCompile(
+		`(?i)^\s*EXTEND_(?:BOTTOM|TOP)\s+~([^~]+)~\s+([A-Za-z0-9_#.\-]+)\s*$`,
+	)
+
+	reBeginDlg = regexp.MustCompile(
+		`(?i)^\s*BEGIN\s+~?([A-Za-z0-9_#.\-]+)~?\s*$`,
+	)
 )
 
 type mode int
@@ -72,6 +86,7 @@ type mode int
 const (
 	modeNormal mode = iota
 	modeChain
+	modeState
 )
 
 type TextKind string
@@ -128,7 +143,7 @@ func ParseDir(dir string) (DByFile, error) {
 		if err != nil {
 			return nil, err
 		}
-		out[name] = m
+		out[helpers.BaseKey(name)] = m
 	}
 
 	return out, nil
@@ -155,12 +170,15 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 	var (
 		out []TextOccurrence
 
-		currentDialog  string
-		currentState   string
-		currentSpeaker string
-		replyIndex     int
-		inState        bool
-		pendingNotes   []string
+		currentDialog      string
+		currentState       string
+		currentSpeaker     string
+		replyIndex         int
+		inState            bool
+		inExtend           bool
+		pendingNotes       []string
+		stateEntryCond     string
+		pendingChainHeader string
 
 		mode = modeNormal
 	)
@@ -174,6 +192,30 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 		switch mode {
 		case modeNormal:
 			line, comment := splitLineComment(raw)
+			line = strings.TrimSpace(line)
+
+			// Handle multi-line CHAIN IF ~...~ THEN ... headers.
+			// If we previously saw a CHAIN line that didn't close the ~ ~, keep appending lines.
+			if pendingChainHeader != "" {
+				// preserve a space/newline so tokens don't glue
+				pendingChainHeader += " " + strings.TrimSpace(line)
+				line = pendingChainHeader
+
+				// still not closed? keep waiting
+				if !strings.Contains(strings.ToUpper(line), "~ THEN") && !strings.Contains(line, "~\tTHEN") && !strings.Contains(line, "~  THEN") {
+					continue
+				}
+
+				// got a complete header; clear buffer and parse normally below
+				pendingChainHeader = ""
+			} else {
+				trim := strings.TrimSpace(line)
+				// Start buffering if this looks like a CHAIN IF header that hasn't closed ~...~ yet.
+				if strings.HasPrefix(strings.ToUpper(trim), "CHAIN IF") && strings.Contains(trim, "~") && !strings.Contains(strings.ToUpper(trim), "~ THEN") {
+					pendingChainHeader = trim
+					continue
+				}
+			}
 
 			// comment-only line
 			if line == "" && comment != "" {
@@ -196,16 +238,47 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 			}
 
 			// BEGIN <dialog>
-			if mm := reBeginDialog.FindStringSubmatch(line); mm != nil {
+			if mm := reBeginDlg.FindStringSubmatch(line); mm != nil {
 				currentDialog = mm[1]
 				currentSpeaker = currentDialog
 				currentState = ""
 				inState = false
+				inExtend = false
 				replyIndex = 0
+				stateEntryCond = ""
 
 				pendingNotes = nil
 				continue
 			}
+
+			// EXTEND
+			if mm := reExtend.FindStringSubmatch(line); mm != nil {
+				dlg := strings.TrimSpace(mm[1])
+				st := strings.TrimSpace(mm[2])
+
+				currentDialog = dlg
+				currentSpeaker = dlg
+				currentState = st
+				replyIndex = 0
+				inState = true
+				inExtend = true
+				mode = modeNormal
+				continue
+			}
+
+			if mm := reChainHeader.FindStringSubmatch(line); mm != nil {
+				if currentDialog == "" {
+					currentDialog = mm[1]
+				}
+				currentSpeaker = mm[1]
+				currentState = mm[2]
+				replyIndex = 0
+				inState = true
+				mode = modeChain
+				lastChainTextIdx = -1
+				continue
+			}
+
 			// IF ... THEN BEGIN <state>
 			if mm := reBeginState.FindStringSubmatch(line); mm != nil {
 				if currentDialog == "" {
@@ -213,14 +286,22 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				}
 				currentState = mm[2]
 				currentSpeaker = currentDialog
+				stateEntryCond = normalizeCondition(mm[1])
 				replyIndex = 0
 				inState = true
+				mode = modeState
 				continue
 			}
 
-			// END closes state
+			// END closes EXTEND_* block only
 			if strings.EqualFold(line, "END") {
-				inState = false
+				if inExtend {
+					inExtend = false
+					inState = false
+					currentState = ""
+					currentSpeaker = ""
+					currentDialog = ""
+				}
 				continue
 			}
 
@@ -249,6 +330,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 			// IF ... THEN REPLY @id <rest> (PC line)
 			if mm := reReply.FindStringSubmatch(line); mm != nil {
 				if currentDialog == "" || currentState == "" || !inState {
+					fmt.Printf("DEBUG: mode=%v inState=%v dlg=%q state=%q line=%q\n", mode, inState, currentDialog, currentState, line)
 					return nil, fmt.Errorf("%s:%d: REPLY outside state", fileName, lineNo)
 				}
 
@@ -291,20 +373,9 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				continue
 			}
 
-			if mm := reChainHeader.FindStringSubmatch(line); mm != nil {
-				if currentDialog == "" {
-					return nil, fmt.Errorf("%s:%d: CHAIN before BEGIN", fileName, lineNo)
-				}
-				currentSpeaker = mm[1]
-				currentState = mm[2]
-				replyIndex = 0
-				inState = true
-				mode = modeChain
-				lastChainTextIdx = -1
-				continue
-			}
 		case modeChain:
 			line, comment := splitLineComment(raw)
+			line = strings.TrimSpace(line)
 
 			// comment-only line
 			if line == "" && comment != "" {
@@ -457,7 +528,154 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 
 			// Ignore other lines in CHAIN body
 			continue
+		case modeState:
+			line, comment := splitLineComment(raw)
+			line = strings.TrimSpace(line)
+
+			// comment-only line
+			if line == "" && comment != "" {
+				if looksLikeWeiduCode(comment) {
+					continue
+				}
+				pendingNotes = append(pendingNotes, comment)
+				continue
+			}
+
+			// inline comment (code + comment)
+			if comment != "" {
+				pendingNotes = append(pendingNotes, comment)
+			}
+
+			if line == "" {
+				continue
+			}
+
+			// END closes this state block
+			if strings.EqualFold(line, "END") {
+				inState = false
+				currentState = ""
+				currentSpeaker = ""
+				mode = modeNormal
+				continue
+			}
+
+			// SAY @id
+			if mm := reSay.FindStringSubmatch(line); mm != nil {
+				id, err := strconv.Atoi(mm[1])
+				if err != nil {
+					return nil, fmt.Errorf("%s:%d: invalid TraID in SAY: %w", fileName, lineNo, err)
+				}
+
+				out = append(out, TextOccurrence{
+					TraID:      intPtr(id),
+					Kind:       KindNPC,
+					SpeakerDlg: currentSpeaker,
+					Dialog:     currentDialog,
+					State:      currentState,
+					Condition:  stateEntryCond,
+					Notes:      pendingNotes,
+				})
+				pendingNotes = nil
+				lastChainTextIdx = len(out) - 1
+				continue
+			}
+
+			// "= @id" continuation line
+			if mm := reEqChainLine.FindStringSubmatch(line); mm != nil {
+				id, err := strconv.Atoi(mm[1])
+				if err != nil {
+					return nil, fmt.Errorf("%s:%d: invalid TraID in continuation: %w", fileName, lineNo, err)
+				}
+				out = append(out, TextOccurrence{
+					TraID:      intPtr(id),
+					Kind:       KindNPC,
+					SpeakerDlg: currentSpeaker,
+					Dialog:     currentDialog,
+					State:      currentState,
+					Condition:  stateEntryCond,
+					Notes:      pendingNotes,
+				})
+				pendingNotes = nil
+				lastChainTextIdx = len(out) - 1
+				continue
+			}
+
+			// "=" line → ignore (continuation marker)
+			if line == "=" {
+				continue
+			}
+
+			// "@id" continuation line
+			if mm := reChainLine.FindStringSubmatch(line); mm != nil {
+				id, err := strconv.Atoi(mm[1])
+				if err != nil {
+					return nil, fmt.Errorf("%s:%d: invalid TraID in continuation: %w", fileName, lineNo, err)
+				}
+
+				out = append(out, TextOccurrence{
+					TraID:      intPtr(id),
+					Kind:       KindNPC,
+					SpeakerDlg: currentSpeaker,
+					Dialog:     currentDialog,
+					State:      currentState,
+					Condition:  stateEntryCond,
+					Notes:      pendingNotes,
+				})
+				pendingNotes = nil
+				lastChainTextIdx = len(out) - 1
+				continue
+			}
+
+			// IF ... THEN REPLY @id <rest>
+			if mm := reReply.FindStringSubmatch(line); mm != nil {
+				cond := normalizeCondition(mm[1])
+
+				id, err := strconv.Atoi(mm[2])
+				if err != nil {
+					return nil, fmt.Errorf("%s:%d: invalid TraID in REPLY: %w", fileName, lineNo, err)
+				}
+
+				rest := strings.TrimSpace(mm[3])
+
+				occ := TextOccurrence{
+					TraID:      intPtr(id),
+					Kind:       KindPC,
+					Dialog:     currentDialog,
+					State:      currentState,
+					ReplyIndex: intPtr(replyIndex),
+					Condition:  cond,
+					Notes:      pendingNotes,
+				}
+				pendingNotes = nil
+				replyIndex++
+
+				// Target parsing (best-effort) - same rules as modeNormal
+				if t := reExtern.FindStringSubmatch(rest); t != nil {
+					occ.ToType = "EXTERN"
+					occ.ToDlg = strPtr(t[1])
+					occ.ToState = strPtr(t[2])
+				} else if t := reGoto.FindStringSubmatch(rest); t != nil {
+					occ.ToType = "GOTO"
+					occ.ToDlg = strPtr(currentDialog)
+					occ.ToState = strPtr(t[1])
+				} else if reExit.MatchString(rest) {
+					occ.ToType = "EXIT"
+				}
+
+				out = append(out, occ)
+				continue
+			}
+
+			// IF ~~ THEN DO ~...~ EXIT
+			if strings.Contains(line, "DO") && reExit.MatchString(line) {
+				// traktuj jako EXIT bez tekstu
+				continue
+			}
+
+			// ignore everything else
+			continue
 		}
+
 	}
 
 	if err := sc.Err(); err != nil {
