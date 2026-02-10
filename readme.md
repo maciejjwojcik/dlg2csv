@@ -41,7 +41,7 @@ This will:
 - read `.tra` and `.d` files from the current directory,
 - generate CSV files with dialogue content and strings.
 
-### Separate directories for `.tra` and `.d``
+### Separate directories for `.tra` and `.d`
 
 ```bash
 dlg2csv <traDir> <dDir>
