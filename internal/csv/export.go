@@ -4,7 +4,6 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -18,13 +17,15 @@ type ExportResult struct {
 }
 
 func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
-	keys := make([]string, 0, len(dialogs))
+	dKeys := make([]string, 0, len(dialogs))
 	for k := range dialogs {
-		keys = append(keys, k)
+		dKeys = append(dKeys, k)
 	}
-	sort.Strings(keys)
+	sort.Strings(dKeys)
 
-	for _, k := range keys {
+	// loops over .d files and retreieves values from corresponding .tra
+	for _, k := range dKeys {
+		used := map[int]struct{}{}
 		csvFileName := sanitizeFilename(k) + ".csv"
 		fmt.Println("creating:", csvFileName)
 		f, err := os.Create(csvFileName)
@@ -85,9 +86,11 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 		}
 
 		occ := dialogs[k]
-		// base := keyBase(k)
 
 		for _, o := range occ {
+			if o.TraID != nil {
+				used[*o.TraID] = struct{}{}
+			}
 			row := makeEmptyRow()
 
 			// columns which are always filled
@@ -96,13 +99,15 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 			row[2] = o.State
 			row[8] = formatComment(o)
 
+			text := tra[k].GetTextByID(o.TraID)
+
 			switch o.Kind {
 			case d.KindNPC:
 				row[3] = formatTraID(o.TraID)
-				row[4] = "text" // placeholder
+				row[4] = text
 			case d.KindPC:
 				row[5] = formatTraID(o.TraID)
-				row[6] = "text" // placeholder
+				row[6] = text
 				row[7] = formatGoto(o)
 			default:
 				continue
@@ -112,6 +117,98 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 				return ExportResult{}, fmt.Errorf("write row %s: %w", csvFileName, err)
 			}
 		}
+
+		ids := make([]int, 0, len(tra[k].Texts))
+		for id := range tra[k].Texts {
+			if _, ok := used[id]; ok {
+				continue
+			}
+			ids = append(ids, id)
+		}
+		sort.Ints(ids)
+
+		for _, id := range ids {
+			row := makeEmptyRow()
+			row[1] = k
+			row[3] = formatTraID(&id)
+			row[4] = tra[k].Texts[id]
+			row[8] = "UNUSED IN .D"
+
+			if err := w.Write(row); err != nil {
+				return ExportResult{}, fmt.Errorf("write unused row %s: %w", csvFileName, err)
+			}
+		}
+
+		w.Flush()
+		if err := w.Error(); err != nil {
+			f.Close()
+			return ExportResult{}, fmt.Errorf("flush %s: %w", csvFileName, err)
+		}
+		if err := f.Close(); err != nil {
+			return ExportResult{}, fmt.Errorf("close %s: %w", csvFileName, err)
+		}
+	}
+
+	// loops over .tra files which don't have a corresponding .d, exports as flat csv
+	traKeys := make([]string, 0, len(tra))
+	for k := range tra {
+		traKeys = append(traKeys, k)
+	}
+	sort.Strings(traKeys)
+
+	for _, k := range traKeys {
+		if _, hasDialog := dialogs[k]; hasDialog {
+			continue
+		}
+
+		csvFileName := sanitizeFilename(k) + ".csv"
+		fmt.Println("creating (tra-only):", csvFileName)
+
+		f, err := os.Create(csvFileName)
+		if err != nil {
+			return ExportResult{}, fmt.Errorf("create %s: %w", csvFileName, err)
+		}
+		w := csv.NewWriter(f)
+
+		if err := w.Write([]string{
+			"npc_name",
+			"dialogue_id",
+			"state",
+			"npc_strref",
+			"npc_text_en",
+			"pc_strref",
+			"pc_text_en",
+			"goto",
+			"comment",
+		}); err != nil {
+			f.Close()
+			return ExportResult{}, fmt.Errorf("write header %s: %w", csvFileName, err)
+		}
+
+		t := tra[k]
+
+		ids := make([]int, 0, len(t.Texts))
+		for id := range t.Texts {
+			ids = append(ids, id)
+		}
+		sort.Ints(ids)
+
+		for _, id := range ids {
+			row := []string{
+				"", // npc_name
+				k,  // dialogue_id
+				"", // state
+				fmt.Sprintf("@%d", id),
+				t.Texts[id],
+				"", "", "", // pc_strref, pc_text_en, goto
+				"TRA_ONLY", // comment
+			}
+			if err := w.Write(row); err != nil {
+				f.Close()
+				return ExportResult{}, fmt.Errorf("write tra-only row %s: %w", csvFileName, err)
+			}
+		}
+
 		w.Flush()
 		if err := w.Error(); err != nil {
 			f.Close()
@@ -128,9 +225,4 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 func sanitizeFilename(s string) string {
 	re := regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 	return re.ReplaceAllString(s, "_")
-}
-
-func keyBase(name string) string {
-	ext := filepath.Ext(name)
-	return strings.TrimSuffix(name, ext)
 }

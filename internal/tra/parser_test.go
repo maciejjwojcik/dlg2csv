@@ -5,6 +5,78 @@ import (
 	"testing"
 )
 
+func TestNewTra(t *testing.T) {
+	texts := map[int]string{
+		1: "one",
+		2: "two",
+	}
+
+	tra := NewTra(texts)
+
+	if tra.Texts == nil {
+		t.Fatal("Texts map is nil")
+	}
+	if len(tra.Texts) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(tra.Texts))
+	}
+	if tra.Texts[1] != "one" {
+		t.Fatalf("unexpected value for id 1: %q", tra.Texts[1])
+	}
+}
+
+func TestTra_GetTextByID(t *testing.T) {
+	id1 := 1
+	id2 := 2
+	idMissing := 999
+
+	tests := []struct {
+		name string
+		tra  Tra
+		id   *int
+		want string
+	}{
+		{
+			name: "nil id returns empty string",
+			tra:  Tra{Texts: map[int]string{1: "hello"}},
+			id:   nil,
+			want: "",
+		},
+		{
+			name: "nil texts map returns empty string",
+			tra:  Tra{Texts: nil},
+			id:   &id1,
+			want: "",
+		},
+		{
+			name: "existing id returns text",
+			tra:  Tra{Texts: map[int]string{1: "hello"}},
+			id:   &id1,
+			want: "hello",
+		},
+		{
+			name: "missing id returns placeholder",
+			tra:  Tra{Texts: map[int]string{1: "hello"}},
+			id:   &idMissing,
+			want: "#MISSING(@999)",
+		},
+		{
+			name: "different existing id",
+			tra:  Tra{Texts: map[int]string{1: "hello", 2: "world"}},
+			id:   &id2,
+			want: "world",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.tra.GetTextByID(tt.id)
+			if got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseReader(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -84,11 +156,11 @@ func TestParseReader(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if len(got) != len(tt.want) {
-				t.Fatalf("map size mismatch: got %d, want %d; got=%v", len(got), len(tt.want), got)
+			if len(got.Texts) != len(tt.want) {
+				t.Fatalf("map size mismatch: got %d, want %d; got=%v", len(got.Texts), len(tt.want), got)
 			}
 			for id, wantStr := range tt.want {
-				gotStr, ok := got[id]
+				gotStr, ok := got.Texts[id]
 				if !ok {
 					t.Fatalf("missing id %d; got=%v", id, got)
 				}
