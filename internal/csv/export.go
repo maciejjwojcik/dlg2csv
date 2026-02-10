@@ -16,12 +16,57 @@ type ExportResult struct {
 	Sheets map[string][][]string
 }
 
+var header = []string{
+	"Name",     // 0
+	"DialogID", // 1
+	"State",    // 2
+
+	"NPC strref", // 3
+	"Dialog",     // 4
+
+	"PC strref",            // 5
+	"Response from player", // 6
+	"Goto",                 // 7
+
+	"Comment", // 8
+
+	"Male NPC",   // 9
+	"Male PC",    // 10
+	"Female NPC", // 11
+	"Female PC",  // 12
+}
+
+const (
+	colName     = 0
+	colDialogID = 1
+	colState    = 2
+
+	colNPCStrref = 3
+	colNPCText   = 4
+
+	colPCStrref = 5
+	colPCText   = 6
+	colGoto     = 7
+
+	colComment = 8
+
+	// translator-only columns (must remain empty in export)
+	/* colMaleNPC   = 9
+	colMalePC    = 10
+	colFemaleNPC = 11
+	colFemalePC  = 12 */
+)
+
 func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 	dKeys := make([]string, 0, len(dialogs))
 	for k := range dialogs {
 		dKeys = append(dKeys, k)
 	}
 	sort.Strings(dKeys)
+
+	makeEmptyRow := func() []string {
+		return make([]string, len(header))
+	}
 
 	// loops over .d files and retreieves values from corresponding .tra
 	for _, k := range dKeys {
@@ -34,25 +79,8 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 		}
 		w := csv.NewWriter(f)
 
-		if err := w.Write([]string{
-			"npc_name",
-			"dialogue_id",
-			"state",
-			"npc_strref",
-			"npc_text_en",
-			"pc_strref",
-			"pc_text_en",
-			"goto",
-			"comment",
-		}); err != nil {
-			if err := f.Close(); err != nil {
-				return ExportResult{}, fmt.Errorf("close %s: %w", csvFileName, err)
-			}
+		if err := w.Write(header); err != nil {
 			return ExportResult{}, fmt.Errorf("write header %s: %w", csvFileName, err)
-		}
-
-		makeEmptyRow := func() []string {
-			return []string{"", "", "", "", "", "", "", "", ""}
 		}
 
 		formatTraID := func(id *int) string {
@@ -95,25 +123,30 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 			}
 			row := makeEmptyRow()
 
-			// columns which are always filled
-			row[0] = o.SpeakerDlg
-			row[1] = o.Dialog
-			row[2] = o.State
-			row[8] = formatComment(o)
+			// columns always filled
+			row[colName] = o.SpeakerDlg
+			row[colDialogID] = o.Dialog
+			row[colState] = o.State
+			row[colComment] = formatComment(o)
 
 			text := tra[k].GetTextByID(o.TraID)
 
 			switch o.Kind {
 			case d.KindNPC:
-				row[3] = formatTraID(o.TraID)
-				row[4] = text
+				row[colNPCStrref] = formatTraID(o.TraID)
+				row[colNPCText] = text
+
 			case d.KindPC:
-				row[5] = formatTraID(o.TraID)
-				row[6] = text
-				row[7] = formatGoto(o)
+				row[colPCStrref] = formatTraID(o.TraID)
+				row[colPCText] = text
+				row[colGoto] = formatGoto(o)
+
 			default:
 				continue
 			}
+
+			// translator columns intentionally left empty:
+			// colMaleNPC, colMalePC, colFemaleNPC, colFemalePC
 
 			if err := w.Write(row); err != nil {
 				return ExportResult{}, fmt.Errorf("write row %s: %w", csvFileName, err)
@@ -131,10 +164,11 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 
 		for _, id := range ids {
 			row := makeEmptyRow()
-			row[1] = k
-			row[3] = formatTraID(&id)
-			row[4] = tra[k].Texts[id]
-			row[8] = "UNUSED IN .D"
+
+			row[colDialogID] = k
+			row[colNPCStrref] = formatTraID(&id) // nadal wrzucasz w NPC kolumny, jak wcześniej
+			row[colNPCText] = tra[k].Texts[id]
+			row[colComment] = "UNUSED IN .D"
 
 			if err := w.Write(row); err != nil {
 				return ExportResult{}, fmt.Errorf("write unused row %s: %w", csvFileName, err)
@@ -174,20 +208,7 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 		}
 		w := csv.NewWriter(f)
 
-		if err := w.Write([]string{
-			"npc_name",
-			"dialogue_id",
-			"state",
-			"npc_strref",
-			"npc_text_en",
-			"pc_strref",
-			"pc_text_en",
-			"goto",
-			"comment",
-		}); err != nil {
-			if err := f.Close(); err != nil {
-				return ExportResult{}, fmt.Errorf("close %s: %w", csvFileName, err)
-			}
+		if err := w.Write(header); err != nil {
 			return ExportResult{}, fmt.Errorf("write header %s: %w", csvFileName, err)
 		}
 
@@ -200,15 +221,13 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 		sort.Ints(ids)
 
 		for _, id := range ids {
-			row := []string{
-				"", // npc_name
-				k,  // dialogue_id
-				"", // state
-				fmt.Sprintf("@%d", id),
-				t.Texts[id],
-				"", "", "", // pc_strref, pc_text_en, goto
-				"TRA_ONLY", // comment
-			}
+			row := makeEmptyRow()
+
+			row[colDialogID] = k
+			row[colNPCStrref] = fmt.Sprintf("@%d", id)
+			row[colNPCText] = t.Texts[id]
+			row[colComment] = "TRA_ONLY"
+
 			if err := w.Write(row); err != nil {
 				if err := f.Close(); err != nil {
 					return ExportResult{}, fmt.Errorf("close %s: %w", csvFileName, err)
