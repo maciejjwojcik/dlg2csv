@@ -51,10 +51,10 @@ const (
 	colComment = 8
 
 	// translator-only columns (must remain empty in export)
-	colMaleNPC   = 9
+	/* colMaleNPC   = 9
 	colMalePC    = 10
 	colFemaleNPC = 11
-	colFemalePC  = 12
+	colFemalePC  = 12 */
 )
 
 func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
