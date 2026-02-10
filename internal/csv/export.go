@@ -143,12 +143,14 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 
 		w.Flush()
 		if err := w.Error(); err != nil {
-			f.Close()
+			_ = f.Close()
 			return ExportResult{}, fmt.Errorf("flush %s: %w", csvFileName, err)
 		}
+
 		if err := f.Close(); err != nil {
 			return ExportResult{}, fmt.Errorf("close %s: %w", csvFileName, err)
 		}
+
 	}
 
 	// loops over .tra files which don't have a corresponding .d, exports as flat csv

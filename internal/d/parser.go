@@ -515,14 +515,24 @@ func looksLikeWeiduCode(s string) bool {
 	if s == "" {
 		return false
 	}
-	u := strings.ToUpper(s)
-	return strings.HasPrefix(u, "IF") ||
-		strings.HasPrefix(u, "CHAIN") ||
-		strings.HasPrefix(u, "BEGIN") ||
-		strings.HasPrefix(u, "SAY") ||
-		strings.HasPrefix(u, "DO") ||
-		strings.HasPrefix(u, "==") ||
-		strings.HasPrefix(u, "@") ||
-		strings.HasPrefix(u, "EXTERN") ||
-		strings.HasPrefix(u, "EXIT")
+
+	if strings.HasPrefix(s, "==") {
+		return true
+	}
+	if strings.HasPrefix(s, "@") {
+		return true
+	}
+
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return false
+	}
+	tok := strings.ToUpper(fields[0])
+
+	switch tok {
+	case "IF", "CHAIN", "BEGIN", "SAY", "DO", "EXTERN", "EXIT":
+		return true
+	default:
+		return false
+	}
 }
