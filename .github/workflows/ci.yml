@@ -45,3 +45,6 @@ jobs:
 
       - name: Test
         run: go test ./... -count=1 -race
+
+      - name: Golden tests
+        run: go test ./... -tags=golden -count=1

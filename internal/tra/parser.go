@@ -194,8 +194,6 @@ func (t Tra) GetTextByID(id *int) string {
 		return ""
 	}
 
-	fmt.Printf("getting text from id %d\n", *id)
-
 	if txt, ok := t.Texts[*id]; ok {
 		return txt
 	}

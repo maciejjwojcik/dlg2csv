@@ -1,0 +1,7 @@
+Name,DialogID,State,NPC strref,Dialog,PC strref,Response from player,Goto,Comment,Male NPC,Male PC,Female NPC,Female PC
+,items,,@3000,Potion of Testing,,,,TRA_ONLY,,,,
+,items,,@3001,A strange potion used only for dlg2csv parser tests.,,,,TRA_ONLY,,,,
+,items,,@3002,Scroll of Multiline,,,,TRA_ONLY,,,,
+,items,,@3003,"This scroll description is multiline.
+It has a second line.
+And a third line with ",,,,TRA_ONLY,,,,

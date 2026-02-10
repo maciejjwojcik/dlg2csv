@@ -1,0 +1,9 @@
+Name,DialogID,State,NPC strref,Dialog,PC strref,Response from player,Goto,Comment,Male NPC,Male PC,Female NPC,Female PC
+AC#TEST,AC#TEST,START,@100,"Hello there, stranger.",,,,"Global(""AC#X"",""GLOBAL"",1)",,,,
+,AC#TEST,START,,,@110,Who are you?,EXTERN:AC#TEST:NEXT,,,,,
+,AC#TEST,START,,,@120,Goodbye.,EXIT,,,,,
+AC#TEST,AC#TEST,NEXT,@102,All right. Let's move on.,,,,,,,,
+,01_Dialog,,@101,Second sentence that is not referenced in the basic .d test.,,,,UNUSED IN .D,,,,
+,01_Dialog,,@131,"[UNUSED] Multiline:
+Line two.
+Line three with ",,,,UNUSED IN .D,,,,

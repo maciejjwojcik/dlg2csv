@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestExport_Golden_DialogsAndStrings(t *testing.T) {
+func TestExport_Golden(t *testing.T) {
 	outDir := t.TempDir()
 
 	err := Export(Options{
@@ -23,38 +23,38 @@ func TestExport_Golden_DialogsAndStrings(t *testing.T) {
 
 	normalize := func(b []byte) string {
 		s := string(b)
-		return strings.ReplaceAll(s, "\r\n", "\n")
+		s = strings.TrimPrefix(s, "\uFEFF")
+		s = strings.ReplaceAll(s, "\r\n", "\n")
+		s = strings.TrimRight(s, "\n")
+		return s
 	}
 
-	// ---- dialogs/*.csv ----
-	expectedDialogsDir := filepath.Join("testdata", "expected", "dialogs")
-	expectedEntries, err := os.ReadDir(expectedDialogsDir)
+	expectedDir := filepath.Join("testdata", "expected")
+	entries, err := os.ReadDir(expectedDir)
 	require.NoError(t, err)
 
-	for _, e := range expectedEntries {
+	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
 
 		name := e.Name()
-		gotPath := filepath.Join(outDir, "dialogs", name)
-		wantPath := filepath.Join(expectedDialogsDir, name)
+
+		var gotPath string
+		if name == "items.csv" {
+			// strings.csv
+			gotPath = filepath.Join(outDir, "strings.csv")
+		} else {
+			// dialog csv
+			gotPath = filepath.Join(outDir, "dialogs", name)
+		}
 
 		got, err := os.ReadFile(gotPath)
-		require.NoError(t, err, "missing generated dialog csv: %s", name)
+		require.NoError(t, err, "missing generated csv: %s", name)
 
-		want, err := os.ReadFile(wantPath)
+		want, err := os.ReadFile(filepath.Join(expectedDir, name))
 		require.NoError(t, err)
 
-		require.Equal(t, normalize(want), normalize(got), "dialog csv mismatch: %s", name)
+		require.Equal(t, normalize(want), normalize(got), "csv mismatch: %s", name)
 	}
-
-	// ---- strings.csv ----
-	gotStrings, err := os.ReadFile(filepath.Join(outDir, "strings.csv"))
-	require.NoError(t, err)
-
-	wantStrings, err := os.ReadFile(filepath.Join("testdata", "expected", "strings.csv"))
-	require.NoError(t, err)
-
-	require.Equal(t, normalize(wantStrings), normalize(gotStrings), "strings.csv mismatch")
 }

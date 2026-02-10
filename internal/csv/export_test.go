@@ -11,6 +11,30 @@ import (
 	"github.com/maciejjwojcik/dlg2csv/internal/tra"
 )
 
+var wantHeader = []string{
+	"Name",
+	"DialogID",
+	"State",
+	"NPC strref",
+	"Dialog",
+	"PC strref",
+	"Response from player",
+	"Goto",
+	"Comment",
+	"Male NPC",
+	"Male PC",
+	"Female NPC",
+	"Female PC",
+}
+
+func padToHeaderLen(row []string) []string {
+	// ensure each row has the same number of columns as header
+	for len(row) < len(wantHeader) {
+		row = append(row, "")
+	}
+	return row
+}
+
 func TestExport_DialogWithUnusedTra_GeneratesExpectedCSV(t *testing.T) {
 	tmp := t.TempDir()
 	oldWD, err := os.Getwd()
@@ -70,16 +94,32 @@ func TestExport_DialogWithUnusedTra_GeneratesExpectedCSV(t *testing.T) {
 	got := mustReadCSV(t, filepath.Join(tmp, "01_Dialog.d.csv"))
 
 	want := [][]string{
-		{"npc_name", "dialogue_id", "state", "npc_strref", "npc_text_en", "pc_strref", "pc_text_en", "goto", "comment"},
+		wantHeader,
 
 		// NPC row
-		{"AC#TEST", "AC#TEST", "START", "@100", "Hello there.", "", "", "", `CHAIN | Global("AC#X","GLOBAL",1)`},
+		padToHeaderLen([]string{
+			"AC#TEST", "AC#TEST", "START",
+			"@100", "Hello there.",
+			"", "", "",
+			`CHAIN | Global("AC#X","GLOBAL",1)`,
+		}),
 
 		// PC row with EXTERN target
-		{"AC#TEST", "AC#TEST", "START", "", "", "@101", "Goodbye.", "EXTERN:AC#TEST:NEXT", "REPLY"},
+		padToHeaderLen([]string{
+			"AC#TEST", "AC#TEST", "START",
+			"", "",
+			"@101", "Goodbye.",
+			"EXTERN:AC#TEST:NEXT",
+			"REPLY",
+		}),
 
-		// UNUSED rows (sorted by id, only those not used in .d)
-		{"", "01 Dialog.d", "", "@999", "I am unused.", "", "", "", "UNUSED IN .D"},
+		// UNUSED rows
+		padToHeaderLen([]string{
+			"", "01 Dialog.d", "",
+			"@999", "I am unused.",
+			"", "", "",
+			"UNUSED IN .D",
+		}),
 	}
 
 	if !reflect.DeepEqual(got, want) {
@@ -117,9 +157,19 @@ func TestExport_TraOnlyFile_GeneratesExpectedCSV(t *testing.T) {
 
 	// ids are sorted numerically: 2, 10
 	want := [][]string{
-		{"npc_name", "dialogue_id", "state", "npc_strref", "npc_text_en", "pc_strref", "pc_text_en", "goto", "comment"},
-		{"", "02_Quest.tra", "", "@2", "Beta", "", "", "", "TRA_ONLY"},
-		{"", "02_Quest.tra", "", "@10", "Alpha", "", "", "", "TRA_ONLY"},
+		wantHeader,
+		padToHeaderLen([]string{
+			"", "02_Quest.tra", "",
+			"@2", "Beta",
+			"", "", "",
+			"TRA_ONLY",
+		}),
+		padToHeaderLen([]string{
+			"", "02_Quest.tra", "",
+			"@10", "Alpha",
+			"", "", "",
+			"TRA_ONLY",
+		}),
 	}
 
 	if !reflect.DeepEqual(got, want) {
@@ -180,15 +230,16 @@ func TestExport_GotoFormatting_EXIT_and_EXTERNFallback(t *testing.T) {
 		t.Fatalf("expected at least 3 rows (header + 2), got %d", len(got))
 	}
 
-	// Row 1 (first data row): EXIT
-	if got[1][7] != "EXIT" {
-		t.Fatalf("expected goto EXIT, got %q", got[1][7])
+	const colGoto = 7
+
+	if got[1][colGoto] != "EXIT" {
+		t.Fatalf("expected goto EXIT, got %q", got[1][colGoto])
 	}
 
-	// Row 2: EXTERN fallback
-	if got[2][7] != "EXTERN" {
-		t.Fatalf("expected goto EXTERN fallback, got %q", got[2][7])
+	if got[2][colGoto] != "EXTERN" {
+		t.Fatalf("expected goto EXTERN fallback, got %q", got[2][colGoto])
 	}
+
 }
 
 func TestSanitizeFilename(t *testing.T) {

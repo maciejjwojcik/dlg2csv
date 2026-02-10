@@ -1,4 +1,0 @@
-npc_name,dialogue_id,state,npc_strref,npc_text_en,pc_strref,pc_text_en,goto
-AC#TEST,AC#TEST,START,@100,"Hello there, stranger.",@110,"Who are you?",EXTERN:AC#TEST:NEXT
-,,,,,@120,"Goodbye.",EXIT
-AC#TEST,AC#TEST,NEXT,@102,"All right. Let's move on.",,,EXIT

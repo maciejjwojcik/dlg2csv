@@ -1,0 +1,12 @@
+Name,DialogID,State,NPC strref,Dialog,PC strref,Response from player,Goto,Comment,Male NPC,Male PC,Female NPC,Female PC
+AC#WOMAN,AC#WOMAN,HELLO,@200,You look lost in these tunnels.,,,,,,,,
+JAHEIJ,AC#WOMAN,HELLO,@201,Careful. The sewers bite back.,,,,"InParty(""JAHEIRA"")",,,,
+AC#WOMAN,AC#WOMAN,HELLO,@204,Yes? What is it?,,,,,,,,
+,AC#WOMAN,HELLO,,,@210,Tell me more.,EXTERN:AC#WOMAN:CONT,,,,,
+,AC#WOMAN,HELLO,,,@220,I have to go.,EXTERN:AC#WOMAN:BYE,IF~~THEN REPLY @999 EXTERN AC#WOMAN NOPE,,,,
+,AC#WOMAN,HELLO,,,@222,Wait — one more thing.,EXTERN:AC#WOMAN:CONT,,,,,
+AC#WOMAN,AC#WOMAN,CONT,@202,Follow the markings on the wall.,,,,,,,,
+AC#WOMAN,AC#WOMAN,BYE,@203,"Farewell, then.",,,,,,,,
+AC#OTHER,AC#OTHER,START,@400,A different NPC appears.,,,,,,,,
+,AC#OTHER,START,,,@410,Leave.,EXIT,,,,,
+,02_Dialog,,@230,[UNUSED] Extra line not referenced by any .d.,,,,UNUSED IN .D,,,,
