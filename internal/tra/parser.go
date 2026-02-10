@@ -9,9 +9,19 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	helpers "github.com/maciejjwojcik/dlg2csv/internal/utils"
 )
 
-type TraByFile map[string]map[int]string
+type TraByFile map[string]Tra
+
+type Tra struct {
+	Texts map[int]string
+}
+
+func NewTra(texts map[int]string) Tra {
+	return Tra{Texts: texts}
+}
 
 type ParseError struct {
 	File string
@@ -44,17 +54,17 @@ func ParseDir(dir string) (TraByFile, error) {
 	out := make(TraByFile, len(files))
 	for _, name := range files {
 		full := filepath.Join(dir, name)
-		m, err := ParseFile(full)
+		tra, err := ParseFile(full)
 		if err != nil {
 			return nil, err
 		}
-		out[name] = m
+		out[helpers.BaseKey(name)] = *tra
 	}
 
 	return out, nil
 }
 
-func ParseFile(path string) (map[int]string, error) {
+func ParseFile(path string) (*Tra, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -68,7 +78,7 @@ func ParseFile(path string) (map[int]string, error) {
 	return ParseReader(f, filepath.Base(path))
 }
 
-func ParseReader(r io.Reader, fileName string) (map[int]string, error) {
+func ParseReader(r io.Reader, fileName string) (*Tra, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 
@@ -174,5 +184,20 @@ func ParseReader(r io.Reader, fileName string) (map[int]string, error) {
 		return nil, &ParseError{File: fileName, Line: lineNo, Msg: fmt.Sprintf("unterminated string literal for @%d", curID)}
 	}
 
-	return out, nil
+	tra := NewTra(out)
+
+	return &tra, nil
+}
+
+func (t Tra) GetTextByID(id *int) string {
+	if id == nil || t.Texts == nil {
+		return ""
+	}
+
+	fmt.Printf("getting text from id %d\n", *id)
+
+	if txt, ok := t.Texts[*id]; ok {
+		return txt
+	}
+	return fmt.Sprintf("#MISSING(@%d)", *id)
 }
