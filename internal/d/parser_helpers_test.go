@@ -148,3 +148,104 @@ func TestIntPtrAndStrPtr(t *testing.T) {
 		}
 	})
 }
+
+func TestSplitLineComment_ExtraCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		wantCode string
+		wantCmt  string
+	}{
+		{
+			name:     "comment_marker_at_end",
+			in:       `SAY @100 //`,
+			wantCode: `SAY @100`,
+			wantCmt:  ``,
+		},
+		{
+			name:     "slashes_in_code_without_comment",
+			in:       `DO ~SetGlobal("X","GLOBAL",1)~`,
+			wantCode: `DO ~SetGlobal("X","GLOBAL",1)~`,
+			wantCmt:  ``,
+		},
+		{
+			name: "odd_number_of_tildes_disables_comment_parsing_after_it",
+			in:   `SAY ~oops // not comment anymore // real?`,
+			// current behavior: inTilde toggles to true and never closes, so no comment recognized
+			wantCode: `SAY ~oops // not comment anymore // real?`,
+			wantCmt:  ``,
+		},
+		{
+			name:     "double_slash_before_tilde_is_comment",
+			in:       `SAY @100 // x ~y~`,
+			wantCode: `SAY @100`,
+			wantCmt:  `x ~y~`,
+		},
+		{
+			name:     "empty_string",
+			in:       ``,
+			wantCode: ``,
+			wantCmt:  ``,
+		},
+		{
+			name:     "single_slash_not_comment",
+			in:       `SAY @100 / greeting`,
+			wantCode: `SAY @100 / greeting`,
+			wantCmt:  ``,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, cmt := splitLineComment(tt.in)
+			if code != tt.wantCode {
+				t.Fatalf("code mismatch:\n got: %q\nwant: %q", code, tt.wantCode)
+			}
+			if cmt != tt.wantCmt {
+				t.Fatalf("comment mismatch:\n got: %q\nwant: %q", cmt, tt.wantCmt)
+			}
+		})
+	}
+}
+
+func TestNormalizeCondition_ExtraCases(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"outer_tilde_with_double_tilde_inside", "~ ~~ ~", "~~"},
+		{"tabs_and_newlines_inside_tilde", "~\n\t a \t\n~", "a"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizeCondition(tc.in)
+			if got != tc.want {
+				t.Fatalf("normalizeCondition(%q)=%q want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLooksLikeWeiduCode_ExtraCases(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"do_as_token_true", "DO ~SetGlobal(\"X\",\"GLOBAL\",1)~ EXIT", true},
+		{"doctor_token_false", "DOCTOR who", false},
+		{"do_punct_token_false", "DO:", false}, // first token "DO:" != "DO"
+		{"if_punct_token_false", "IF:", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := looksLikeWeiduCode(tc.in)
+			if got != tc.want {
+				t.Fatalf("looksLikeWeiduCode(%q)=%v want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}

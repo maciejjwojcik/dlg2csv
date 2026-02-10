@@ -47,6 +47,9 @@ var (
 	// Capturing groups: m[1] = tra id
 	reChainLine = regexp.MustCompile(`^\s*@(\d+)\s*$`)
 
+	// "= @id" continuation line in one go (common WeiDU formatting)
+	reEqChainLine = regexp.MustCompile(`^\s*=\s*@(\d+)\s*$`)
+
 	// Interjection with IF:
 	//   ==JAHEIJ IF ~InParty("JAHEIRA")~ THEN @201
 	// Groups:
@@ -577,6 +580,26 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				continue
 			}
 
+			// "= @id" continuation line
+			if mm := reEqChainLine.FindStringSubmatch(line); mm != nil {
+				id, err := strconv.Atoi(mm[1])
+				if err != nil {
+					return nil, fmt.Errorf("%s:%d: invalid TraID in continuation: %w", fileName, lineNo, err)
+				}
+				out = append(out, TextOccurrence{
+					TraID:      intPtr(id),
+					Kind:       KindNPC,
+					SpeakerDlg: currentSpeaker,
+					Dialog:     currentDialog,
+					State:      currentState,
+					Condition:  stateEntryCond,
+					Notes:      pendingNotes,
+				})
+				pendingNotes = nil
+				lastChainTextIdx = len(out) - 1
+				continue
+			}
+
 			// "=" line → ignore (continuation marker)
 			if line == "=" {
 				continue
@@ -626,7 +649,12 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				pendingNotes = nil
 				replyIndex++
 
-				if t := reGoto.FindStringSubmatch(rest); t != nil {
+				// Target parsing (best-effort) - same rules as modeNormal
+				if t := reExtern.FindStringSubmatch(rest); t != nil {
+					occ.ToType = "EXTERN"
+					occ.ToDlg = strPtr(t[1])
+					occ.ToState = strPtr(t[2])
+				} else if t := reGoto.FindStringSubmatch(rest); t != nil {
 					occ.ToType = "GOTO"
 					occ.ToDlg = strPtr(currentDialog)
 					occ.ToState = strPtr(t[1])
