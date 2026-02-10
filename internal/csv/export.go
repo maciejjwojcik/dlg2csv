@@ -45,7 +45,9 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 			"goto",
 			"comment",
 		}); err != nil {
-			f.Close()
+			if err := f.Close(); err != nil {
+				return ExportResult{}, fmt.Errorf("close %s: %w", csvFileName, err)
+			}
 			return ExportResult{}, fmt.Errorf("write header %s: %w", csvFileName, err)
 		}
 
@@ -141,12 +143,14 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 
 		w.Flush()
 		if err := w.Error(); err != nil {
-			f.Close()
+			_ = f.Close()
 			return ExportResult{}, fmt.Errorf("flush %s: %w", csvFileName, err)
 		}
+
 		if err := f.Close(); err != nil {
 			return ExportResult{}, fmt.Errorf("close %s: %w", csvFileName, err)
 		}
+
 	}
 
 	// loops over .tra files which don't have a corresponding .d, exports as flat csv
@@ -181,7 +185,9 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 			"goto",
 			"comment",
 		}); err != nil {
-			f.Close()
+			if err := f.Close(); err != nil {
+				return ExportResult{}, fmt.Errorf("close %s: %w", csvFileName, err)
+			}
 			return ExportResult{}, fmt.Errorf("write header %s: %w", csvFileName, err)
 		}
 
@@ -204,14 +210,18 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 				"TRA_ONLY", // comment
 			}
 			if err := w.Write(row); err != nil {
-				f.Close()
+				if err := f.Close(); err != nil {
+					return ExportResult{}, fmt.Errorf("close %s: %w", csvFileName, err)
+				}
 				return ExportResult{}, fmt.Errorf("write tra-only row %s: %w", csvFileName, err)
 			}
 		}
 
 		w.Flush()
 		if err := w.Error(); err != nil {
-			f.Close()
+			if err := f.Close(); err != nil {
+				return ExportResult{}, fmt.Errorf("close %s: %w", csvFileName, err)
+			}
 			return ExportResult{}, fmt.Errorf("flush %s: %w", csvFileName, err)
 		}
 		if err := f.Close(); err != nil {
