@@ -217,7 +217,12 @@ func mustReadCSV(t *testing.T, path string) [][]string {
 	if err != nil {
 		t.Fatalf("open %s: %v", path, err)
 	}
-	defer f.Close()
+
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Fatalf("close %s: %v", path, err)
+		}
+	}()
 
 	r := csv.NewReader(f)
 	records, err := r.ReadAll()
