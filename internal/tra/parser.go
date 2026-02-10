@@ -69,7 +69,11 @@ func ParseFile(path string) (*Tra, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			return
+		}
+	}()
 
 	return ParseReader(f, filepath.Base(path))
 }
