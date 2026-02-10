@@ -23,7 +23,7 @@ func TestExport_Golden(t *testing.T) {
 	require.True(t, ok)
 
 	// internal/e2e -> internal -> repo root
-	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", ".."))
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
 
 	// Export writes to CWD -> isolate in temp dir.
 	oldWD, err := os.Getwd()
