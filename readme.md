@@ -18,7 +18,7 @@ The tool focuses on **readability, context, and stability**, rather than raw bin
   - dialogue flow references (next states)
   - enough context for translators to work comfortably
 - Export all non-dialogue strings from `.tra` files as well
-- Generate clean, canonical `.tra` output from translated CSV files
+- Generate clean, canonical `.tra` output from translated CSV files (to do)
 
 ## What it does NOT do
 
