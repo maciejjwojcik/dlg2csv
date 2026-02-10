@@ -5,6 +5,7 @@ package e2e_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -18,12 +19,17 @@ import (
 func TestExport_Golden(t *testing.T) {
 	outDir := t.TempDir()
 
-	repoRoot, err := os.Getwd()
-	require.NoError(t, err)
+	_, thisFile, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+
+	// internal/e2e -> internal -> repo root
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", ".."))
 
 	// Export writes to CWD -> isolate in temp dir.
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
 	require.NoError(t, os.Chdir(outDir))
-	t.Cleanup(func() { _ = os.Chdir(repoRoot) })
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
 
 	traDir := filepath.Join(repoRoot, "testdata", "mod", "language", "english")
 	dDir := filepath.Join(repoRoot, "testdata", "mod", "dlg", "dialogues_compile")
@@ -45,7 +51,6 @@ func TestExport_Golden(t *testing.T) {
 		return s
 	}
 
-	// Compare all expected CSV files 1:1 with generated CSV in CWD.
 	expectedDir := filepath.Join(repoRoot, "testdata", "expected")
 	entries, err := os.ReadDir(expectedDir)
 	require.NoError(t, err)
@@ -66,7 +71,6 @@ func TestExport_Golden(t *testing.T) {
 		require.Equal(t, normalize(want), normalize(got), "csv mismatch: %s", e.Name())
 	}
 
-	// Ensure no extra CSV files were generated.
 	outEntries, err := os.ReadDir(outDir)
 	require.NoError(t, err)
 
