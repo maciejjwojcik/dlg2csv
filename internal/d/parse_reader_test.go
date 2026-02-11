@@ -710,6 +710,25 @@ END
 	}
 }
 
+func TestParseReader_ReplyPlusGeneratesGoto(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+
+IF ~~ THEN BEGIN 0
+  SAY @0
+  IF ~~ THEN REPLY @1 + next_state
+END
+`
+	got, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !hasGoto(got, "AC#TEST", "0", "next_state") {
+		t.Fatalf("expected GOTO to next_state, got none")
+	}
+}
+
 func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -732,4 +751,99 @@ func equalIntSlices(a, b []int) bool {
 		}
 	}
 	return true
+}
+
+func hasGoto(occ []TextOccurrence, dlgName, fromState, toState string) bool {
+	for _, o := range occ {
+		if o.Dialog != dlgName {
+			continue
+		}
+		if o.State != fromState {
+			continue
+		}
+		if o.ToType != "GOTO" {
+			continue
+		}
+		if o.ToState == nil {
+			continue
+		}
+		if *o.ToState == toState {
+			return true
+		}
+	}
+	return false
+}
+
+func TestParseReader_GotoWithLeadingWhitespace(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+
+IF ~~ THEN BEGIN 0
+  SAY @0
+	IF ~~ THEN REPLY @1 GOTO next_state
+END
+
+IF ~~ THEN BEGIN next_state
+  SAY @2
+  IF ~~ THEN EXIT
+END
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !hasGoto(occ, "AC#TEST", "0", "next_state") {
+		t.Fatalf("expected GOTO from 0 to next_state, got none")
+	}
+}
+
+func TestParseReader_MultilineCondInIfThenReply_Goto(t *testing.T) {
+	input := `
+BEGIN AC#TEST
+
+IF ~~ THEN BEGIN 0
+  SAY @0
+  IF ~PartyHasItem("X")
+     !Dead("Y")~ THEN REPLY @1 GOTO next_state
+END
+
+IF ~~ THEN BEGIN next_state
+  SAY @2
+  IF ~~ THEN EXIT
+END
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !hasGoto(occ, "AC#TEST", "0", "next_state") {
+		t.Fatalf("expected GOTO from 0 to next_state, got none")
+	}
+}
+
+func TestParseReader_BeginLabelInTildes(t *testing.T) {
+	input := `
+BEGIN ~AC#TEST~
+
+IF ~~ THEN BEGIN 0
+  SAY @0
+  IF ~~ THEN REPLY @1 GOTO next_state
+END
+
+IF ~~ THEN BEGIN next_state
+  SAY @2
+  IF ~~ THEN EXIT
+END
+`
+	occ, err := ParseReader(strings.NewReader(input), "x.d")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasGoto(occ, "AC#TEST", "0", "next_state") {
+		t.Fatalf("expected GOTO from 0 to next_state, got none")
+	}
 }
