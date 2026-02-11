@@ -729,8 +729,17 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 					occ.ToType = "GOTO"
 					occ.ToDlg = strPtr(currentDialog)
 					occ.ToState = strPtr(t[1])
+				} else if t := rePlus.FindStringSubmatch(rest); t != nil {
+					// WeiDU shorthand: "+ label" == "GOTO label"
+					occ.ToType = "GOTO"
+					occ.ToDlg = strPtr(currentDialog)
+					occ.ToState = strPtr(t[1])
 				} else if reExit.MatchString(rest) {
 					occ.ToType = "EXIT"
+				}
+
+				if currentDialog == "AC#FPGHO" {
+					fmt.Printf("  => ToType=%q ToState=%v\n", occ.ToType, occ.ToState)
 				}
 
 				out = append(out, occ)
