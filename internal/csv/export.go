@@ -110,6 +110,11 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 					return fmt.Sprintf("EXTERN:%s:%s", *o.ToDlg, *o.ToState)
 				}
 				return "EXTERN" // fallback
+			case "GOTO":
+				if o.ToState != nil {
+					return *o.ToState
+				}
+				return "GOTO" // fallback
 			default:
 				return ""
 			}

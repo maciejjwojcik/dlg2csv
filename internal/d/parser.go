@@ -16,17 +16,20 @@ import (
 
 var (
 	// IF ~cond~ THEN BEGIN STATE
-	reBeginState = regexp.MustCompile(`(?i)^\s*IF\s*(~.*?~|~~)\s*THEN\s*BEGIN\s+([A-Za-z0-9_#.\-]+)\s*$`)
+	reBeginState = regexp.MustCompile(
+		`(?i)^\s*IF\s*(~[\s\S]*?~|~~)\s*THEN\s*BEGIN\s+([A-Za-z0-9_#.\-]+)\s*$`,
+	)
 
 	// SAY @123
 	reSay = regexp.MustCompile(`(?i)^\s*SAY\s+@(\d+)\s*$`)
 
 	// IF ~cond~ THEN REPLY @123 <rest>
-	reReply = regexp.MustCompile(`(?i)^\s*IF\s*(~.*?~|~~)\s*THEN\s*REPLY\s+@(\d+)\s*(.*)$`)
+	reReply = regexp.MustCompile(`(?i)^\s*IF\s*(~[\s\S]*?~|~~)\s*THEN\s*REPLY\s+@(\d+)\s*(.*)$`)
 
 	// Targets inside reply "rest"
 	reExtern = regexp.MustCompile(`(?i)\bEXTERN\s+([A-Za-z0-9_#.\-]+)\s+([A-Za-z0-9_#.\-]+)\b`)
 	reGoto   = regexp.MustCompile(`(?i)\bGOTO\s+([A-Za-z0-9_#.\-]+)\b`)
+	rePlus   = regexp.MustCompile(`(?m)(?:^|\s)\+\s*([A-Za-z0-9_#.\-]+)\b`)
 	reExit   = regexp.MustCompile(`(?i)\bEXIT\b`)
 
 	// CHAIN header with optional IF~...~THEN
@@ -217,6 +220,27 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				}
 			}
 
+			statement := line
+			// as long as ~ are an odd number, we're inside a statement
+			for needsMoreTildes(statement) {
+				if !sc.Scan() {
+					return nil, fmt.Errorf("%s:%d: unterminated ~...~", fileName, lineNo)
+				}
+				lineNo++ // ważne dla diagnostyki
+
+				raw2 := sc.Text()
+				line2, comment2 := splitLineComment(raw2)
+
+				// komentarze z kolejnych linii też zachowaj (tak jak inline commenty)
+				if comment2 != "" && currentDialog != "" {
+					pendingNotes = append(pendingNotes, comment2)
+				}
+
+				statement += "\n" + line2
+			}
+
+			line = strings.TrimSpace(statement)
+
 			// comment-only line
 			if line == "" && comment != "" {
 				if looksLikeWeiduCode(comment) {
@@ -365,6 +389,11 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 					occ.ToType = "GOTO"
 					occ.ToDlg = strPtr(currentDialog)
 					occ.ToState = strPtr(t[1])
+				} else if t := rePlus.FindStringSubmatch(rest); t != nil {
+					// WeiDU shorthand: "+ label" == "GOTO label"
+					occ.ToType = "GOTO"
+					occ.ToDlg = strPtr(currentDialog)
+					occ.ToState = strPtr(t[1])
 				} else if reExit.MatchString(rest) {
 					occ.ToType = "EXIT"
 				}
@@ -402,6 +431,27 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				lastChainTextIdx = -1
 				continue
 			}
+
+			statement := line
+			// as long as ~ are an odd number, we're inside a statement
+			for needsMoreTildes(statement) {
+				if !sc.Scan() {
+					return nil, fmt.Errorf("%s:%d: unterminated ~...~", fileName, lineNo)
+				}
+				lineNo++ // ważne dla diagnostyki
+
+				raw2 := sc.Text()
+				line2, comment2 := splitLineComment(raw2)
+
+				// komentarze z kolejnych linii też zachowaj (tak jak inline commenty)
+				if comment2 != "" && currentDialog != "" {
+					pendingNotes = append(pendingNotes, comment2)
+				}
+
+				statement += "\n" + line2
+			}
+
+			line = strings.TrimSpace(statement)
 
 			// Auto-transition in CHAIN body: EXTERN ... or EXIT
 			// Attach to the last emitted NPC text occurrence in this CHAIN.
@@ -558,6 +608,27 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				mode = modeNormal
 				continue
 			}
+
+			statement := line
+			// as long as ~ are an odd number, we're inside a statement
+			for needsMoreTildes(statement) {
+				if !sc.Scan() {
+					return nil, fmt.Errorf("%s:%d: unterminated ~...~", fileName, lineNo)
+				}
+				lineNo++ // ważne dla diagnostyki
+
+				raw2 := sc.Text()
+				line2, comment2 := splitLineComment(raw2)
+
+				// komentarze z kolejnych linii też zachowaj (tak jak inline commenty)
+				if comment2 != "" && currentDialog != "" {
+					pendingNotes = append(pendingNotes, comment2)
+				}
+
+				statement += "\n" + line2
+			}
+
+			line = strings.TrimSpace(statement)
 
 			// SAY @id
 			if mm := reSay.FindStringSubmatch(line); mm != nil {
@@ -753,4 +824,8 @@ func looksLikeWeiduCode(s string) bool {
 	default:
 		return false
 	}
+}
+
+func needsMoreTildes(s string) bool {
+	return strings.Count(s, "~")%2 == 1
 }
