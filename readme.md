@@ -71,6 +71,59 @@ and meant to be filled by translators.
 Early development / MVP stage.  
 The initial goal is a stable export → translate → rebuild `.tra` workflow.
 
+## Roadmap
+
+### v0.1.x — Parser Stabilization
+- [x] Basic CSV export (layout aligned with the legacy translation sheet)
+- [x] Support for `GOTO`, `EXTERN`, `EXIT`
+- [ ] Stabilize the parser for known mods
+- [ ] Improved CSV export with built-in formulas for `.tra``construction
+- [ ] Recursive search for `.d` and `.tra` (current directory + subfolders)
+- [ ] Deterministic output (stable ordering, no debug logs)
+
+---
+
+### v0.2.0 — Translator-Friendly XLSX Export
+- [ ] Export to `.xlsx`
+- [ ] Master sheet with global progress summary
+- [ ] Frozen header row + filters
+- [ ] Basic formatting (column widths, header styling)
+- [ ] Optional: clickable `GOTO` hyperlinks
+
+---
+
+### v0.3.x — UX & Validation
+- [ ] Simple terminal UI (interactive mode)
+- [ ] Validation of missing or broken `GOTO`
+- [ ] Missing translation report
+- [ ] Conditional formatting for translation status
+
+---
+
+### Future Ideas
+- [ ] Mermaid dialog graphs
+- [ ] Diff export between mod versions
+- [ ] Direct Google Sheets integration
+
+## Contributing
+
+Bug reports, feature ideas, and workflow suggestions are very welcome.
+
+If something breaks on a real mod, please open an issue and include:
+- a short description of the problem
+- a minimal example (if possible)
+- link to the file in the mod's repo (if possible)
+- your OS and how you ran the tool
+
+Pull requests are welcome, especially for:
+- parser improvements
+- exporter enhancements
+- validation features
+
+Tests are appreciated, especially for parser changes.
+
+The goal of this project is to support real-world IE translation workflows, so practical feedback is highly appreciated.
+
 ## Author
 
 Maciej Wójcik/cherrycoke2l

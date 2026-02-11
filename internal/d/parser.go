@@ -738,10 +738,6 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 					occ.ToType = "EXIT"
 				}
 
-				if currentDialog == "AC#FPGHO" {
-					fmt.Printf("  => ToType=%q ToState=%v\n", occ.ToType, occ.ToState)
-				}
-
 				out = append(out, occ)
 				continue
 			}
