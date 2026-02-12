@@ -44,7 +44,7 @@ func ParseDir(dir string) (TraByFile, error) {
 		if ent.IsDir() {
 			continue
 		}
-		name := ent.Name()
+		name := strings.ToLower(ent.Name())
 		if strings.HasSuffix(strings.ToLower(name), ".tra") {
 			files = append(files, name)
 		}

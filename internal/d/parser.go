@@ -132,7 +132,7 @@ func ParseDir(dir string) (DByFile, error) {
 		if ent.IsDir() {
 			continue
 		}
-		name := ent.Name()
+		name := strings.ToLower(ent.Name())
 		if strings.HasSuffix(strings.ToLower(name), ".d") {
 			files = append(files, name)
 		}
