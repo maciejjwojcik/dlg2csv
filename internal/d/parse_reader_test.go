@@ -847,3 +847,56 @@ END
 		t.Fatalf("expected GOTO from 0 to next_state, got none")
 	}
 }
+
+func TestParseReader_ExtendBottom_MultilineDoReply_Goto(t *testing.T) {
+	input := `EXTEND_BOTTOM FATESP 6 #4
+IF ~ !Dead("L#KHALID") !InMyArea("L#KHALID") Global("L#KHALIDSummonedTB","GLOBAL",0) Global("JaheiraSummoned","GLOBAL",0)~ THEN REPLY @0 DO ~CreateVisualEffect("SPPORTAL",[1999.1228])
+Wait(2) 
+CreateCreature("L#KHA25",[1999.1228],0) 
+SetGlobal("L#KHALIDSummonedTB","GLOBAL",1)
+SetGlobal("JaheiraSummoned","GLOBAL",3)
+ActionOverride("L#KHALID",StartDialogueNoSet(Player1))~ GOTO 8
+END
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "FateSpirit.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	if len(occ) != 1 {
+		t.Fatalf("expected 1 occurrence, got %d: %+v", len(occ), occ)
+	}
+
+	o := occ[0]
+
+	if o.Kind != KindPC {
+		t.Fatalf("expected KindPC, got: %+v", o)
+	}
+	if o.TraID == nil || *o.TraID != 0 {
+		t.Fatalf("expected TraID @0, got: %+v", o)
+	}
+
+	// EXTEND context
+	if o.Dialog != "FATESP" || o.State != "6" {
+		t.Fatalf("expected Dialog=FATESP State=6, got: %+v", o)
+	}
+
+	// Condition should be normalized (no outer ~ ~)
+	wantCond := `!Dead("L#KHALID") !InMyArea("L#KHALID") Global("L#KHALIDSummonedTB","GLOBAL",0) Global("JaheiraSummoned","GLOBAL",0)`
+	if o.Condition != wantCond {
+		t.Fatalf("expected condition %q, got %q", wantCond, o.Condition)
+	}
+
+	// Target parsing: "... GOTO 8"
+	if strings.ToUpper(o.ToType) != "GOTO" {
+		t.Fatalf("expected ToType=GOTO, got: %+v", o)
+	}
+	if o.ToState == nil || *o.ToState != "8" {
+		t.Fatalf("expected ToState=8, got: %+v", o)
+	}
+	// Optional: your parser sets ToDlg for GOTO to current dialog
+	if o.ToDlg == nil || *o.ToDlg != "FATESP" {
+		t.Fatalf("expected ToDlg=FATESP, got: %+v", o)
+	}
+}
