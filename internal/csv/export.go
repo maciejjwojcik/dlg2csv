@@ -68,7 +68,7 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 		return make([]string, len(header))
 	}
 
-	// loops over .d files and retreieves values from corresponding .tra
+	// loops over .d files and retrieves values from corresponding .tra
 	for _, k := range dKeys {
 		used := map[int]struct{}{}
 		csvFileName := sanitizeFilename(k) + ".csv"
@@ -119,7 +119,6 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 				return ""
 			}
 		}
-
 		occ := dialogs[k]
 
 		for _, o := range occ {
@@ -171,7 +170,7 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 			row := makeEmptyRow()
 
 			row[colDialogID] = k
-			row[colNPCStrref] = formatTraID(&id) // nadal wrzucasz w NPC kolumny, jak wcześniej
+			row[colNPCStrref] = formatTraID(&id)
 			row[colNPCText] = tra[k].Texts[id]
 			row[colComment] = "UNUSED IN .D"
 

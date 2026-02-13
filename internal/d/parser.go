@@ -24,7 +24,13 @@ var (
 	reSay = regexp.MustCompile(`(?i)^\s*SAY\s+@(\d+)\s*$`)
 
 	// IF ~cond~ THEN REPLY @123 <rest>
-	reReply = regexp.MustCompile(`(?i)^\s*IF\s*(~[\s\S]*?~|~~)\s*THEN\s*REPLY\s+@(\d+)\s*(.*)$`)
+	// Matches PC reply lines inside states/extends.
+	// - Supports both explicit conditions (~ ... ~) and empty condition (~~).
+	// - <rest> may include DO ~...~ blocks and can span multiple lines.
+	// - Uses [\s\S] instead of '.' because Go's regexp does not enable DOTALL by default.
+	reReply = regexp.MustCompile(
+		`(?i)^\s*IF\s*(~[\s\S]*?~|~~)\s*THEN\s*REPLY\s+@(\d+)\s*([\s\S]*)$`,
+	)
 
 	// Targets inside reply "rest"
 	reExtern = regexp.MustCompile(`(?i)\bEXTERN\s+([A-Za-z0-9_#.\-]+)\s+([A-Za-z0-9_#.\-]+)\b`)
@@ -76,7 +82,7 @@ var (
 	// EXTEND_TOP ~SOMEDLG~ some_state
 	// m[1] = dlg, m[2] = state
 	reExtend = regexp.MustCompile(
-		`(?i)^\s*EXTEND_(?:BOTTOM|TOP)\s+~([^~]+)~\s+([A-Za-z0-9_#.\-]+)\s*$`,
+		`(?i)^\s*EXTEND_(?:BOTTOM|TOP)\s+(?:~([^~]+)~|([A-Za-z0-9_#.\-]+))\s+([A-Za-z0-9_#.\-]+)(?:\s+#\s*(\d+))?\s*$`,
 	)
 
 	reBeginDlg = regexp.MustCompile(
@@ -132,7 +138,7 @@ func ParseDir(dir string) (DByFile, error) {
 		if ent.IsDir() {
 			continue
 		}
-		name := ent.Name()
+		name := strings.ToLower(ent.Name())
 		if strings.HasSuffix(strings.ToLower(name), ".d") {
 			files = append(files, name)
 		}
@@ -278,7 +284,10 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 			// EXTEND
 			if mm := reExtend.FindStringSubmatch(line); mm != nil {
 				dlg := strings.TrimSpace(mm[1])
-				st := strings.TrimSpace(mm[2])
+				if dlg == "" {
+					dlg = strings.TrimSpace(mm[2]) // no tilde
+				}
+				st := strings.TrimSpace(mm[3])
 
 				currentDialog = dlg
 				currentSpeaker = dlg
@@ -289,7 +298,6 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				mode = modeNormal
 				continue
 			}
-
 			if mm := reChainHeader.FindStringSubmatch(line); mm != nil {
 				if currentDialog == "" {
 					currentDialog = mm[1]
@@ -354,7 +362,6 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 			// IF ... THEN REPLY @id <rest> (PC line)
 			if mm := reReply.FindStringSubmatch(line); mm != nil {
 				if currentDialog == "" || currentState == "" || !inState {
-					fmt.Printf("DEBUG: mode=%v inState=%v dlg=%q state=%q line=%q\n", mode, inState, currentDialog, currentState, line)
 					return nil, fmt.Errorf("%s:%d: REPLY outside state", fileName, lineNo)
 				}
 
@@ -699,6 +706,9 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 
 			// IF ... THEN REPLY @id <rest>
 			if mm := reReply.FindStringSubmatch(line); mm != nil {
+				if currentDialog == "" || currentState == "" || !inState {
+					return nil, fmt.Errorf("%s:%d: REPLY outside state", fileName, lineNo)
+				}
 				cond := normalizeCondition(mm[1])
 
 				id, err := strconv.Atoi(mm[2])
