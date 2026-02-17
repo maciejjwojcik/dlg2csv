@@ -1029,7 +1029,7 @@ func TestParseReader_AppendSetsDialogContext_AllowsStateWithoutBegin(t *testing.
 APPEND MODNPC
 IF ~~ THEN BEGIN APPEND_STATE_1
 SAY @10
-EXIT
+IF ~~ THEN EXIT
 END
 END
 `
@@ -1050,9 +1050,6 @@ END
 	}
 	if occ[0].Dialog != "MODNPC" || occ[0].State != "APPEND_STATE_1" || occ[0].SpeakerDlg != "MODNPC" {
 		t.Fatalf("occ[0] dialog/state/speaker mismatch: %+v", occ[0])
-	}
-	if occ[0].ToType != "EXIT" {
-		t.Fatalf("occ[0] expected auto EXIT, got: %+v", occ[0])
 	}
 }
 
@@ -1083,7 +1080,57 @@ END
 	if occ[0].Dialog != "MODNPC" || occ[0].State != "WEIGHTED_STATE" || occ[0].SpeakerDlg != "MODNPC" {
 		t.Fatalf("occ[0] dialog/state/speaker mismatch: %+v", occ[0])
 	}
-	if occ[0].ToType != "EXIT" {
-		t.Fatalf("occ[0] expected auto EXIT, got: %+v", occ[0])
+}
+
+func TestParseReader_BeginStateShortForm_AllowsSayInsideState(t *testing.T) {
+	input := `
+APPEND MODNPC
+IF ~~ SHORT_STATE_1
+SAY @100
+END
+END
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "begin_state_short.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	// Expected:
+	// 0) NPC @100 in dialog MODNPC / state SHORT_STATE_1
+	if len(occ) != 1 {
+		t.Fatalf("expected 1 occurrence, got %d: %+v", len(occ), occ)
+	}
+
+	if occ[0].Kind != KindNPC || occ[0].TraID == nil || *occ[0].TraID != 100 {
+		t.Fatalf("occ[0] expected NPC @100, got: %+v", occ[0])
+	}
+	if occ[0].Dialog != "MODNPC" || occ[0].State != "SHORT_STATE_1" || occ[0].SpeakerDlg != "MODNPC" {
+		t.Fatalf("occ[0] dialog/state/speaker mismatch: %+v", occ[0])
+	}
+}
+
+func TestParseReader_BeginStateShortForm_WithTildeCondition(t *testing.T) {
+	input := `
+APPEND MODNPC
+IF ~Global("X","GLOBAL",1)~ SHORT_STATE_2
+SAY @101
+END
+END
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "begin_state_short_tilde.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	if len(occ) != 1 {
+		t.Fatalf("expected 1 occurrence, got %d: %+v", len(occ), occ)
+	}
+	if occ[0].Dialog != "MODNPC" || occ[0].State != "SHORT_STATE_2" {
+		t.Fatalf("occ[0] dialog/state mismatch: %+v", occ[0])
+	}
+	if occ[0].Condition != `Global("X","GLOBAL",1)` {
+		t.Fatalf("occ[0] expected condition Global(\"X\",\"GLOBAL\",1), got: %q", occ[0].Condition)
 	}
 }

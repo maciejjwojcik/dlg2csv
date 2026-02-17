@@ -138,6 +138,20 @@ var (
 	// Capturing groups:
 	//   m[1] = dialog (e.g. "WSMITH01")
 	reAppendHeader = regexp.MustCompile(`(?i)^\s*APPEND\s+([A-Za-z0-9_#.\-]+)\s*$`)
+
+	// IF <trigger> <state>  (short state header, without THEN BEGIN)
+	//
+	// Examples matched:
+	//   IF ~~ my_state
+	//   IF ~Global("X","GLOBAL",1)~ my_state
+	//   IF WEIGHT #-5 ~~ my_state
+	//
+	// Capturing groups:
+	//   m[1] = trigger ("~~" or "~...~")
+	//   m[2] = state name
+	reBeginStateShort = regexp.MustCompile(
+		`(?i)^\s*IF(?:\s+WEIGHT\s*#-?\d+)?\s*(~~|~.*~)\s+([A-Za-z0-9_#.\-]+)\s*$`,
+	)
 )
 
 type mode int
@@ -418,6 +432,19 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 			if mm := reBeginState.FindStringSubmatch(line); mm != nil {
 				if currentDialog == "" {
 					return nil, fmt.Errorf("%s:%d: state defined before BEGIN", fileName, lineNo)
+				}
+				currentState = mm[2]
+				currentSpeaker = currentDialog
+				stateEntryCond = normalizeCondition(mm[1])
+				replyIndex = 0
+				inState = true
+				mode = modeState
+				continue
+			}
+			// shorthand: IF ... THEN BEGIN <state>
+			if mm := reBeginStateShort.FindStringSubmatch(line); mm != nil {
+				if currentDialog == "" {
+					return nil, fmt.Errorf("%s:%d: state defined without dialog context (missing BEGIN/APPEND/CHAIN)", fileName, lineNo)
 				}
 				currentState = mm[2]
 				currentSpeaker = currentDialog
