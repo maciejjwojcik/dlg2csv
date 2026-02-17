@@ -85,6 +85,9 @@ var (
 		`(?i)^\s*EXTEND_(?:BOTTOM|TOP)\s+(?:~([^~]+)~|([A-Za-z0-9_#.\-]+))\s+([A-Za-z0-9_#.\-]+)(?:\s+#\s*(\d+))?\s*$`,
 	)
 
+	// BEGIN SOMEDLG
+	// BEGIN ~SOMEDLG~
+	// m[1] = dlg
 	reBeginDlg = regexp.MustCompile(
 		`(?i)^\s*BEGIN\s+~?([A-Za-z0-9_#.\-]+)~?\s*$`,
 	)

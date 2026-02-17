@@ -79,10 +79,10 @@ func TestExport_DialogWithUnusedTra_GeneratesExpectedCSV(t *testing.T) {
 	}
 
 	tr := tra.TraByFile{
-		"01 Dialog.d": mustMakeTra(t, map[int]string{
-			100: "Hello there.",
-			101: "Goodbye.",
-			999: "I am unused.",
+		"01 Dialog.d": mustMakeTra(t, map[string]string{
+			"100": "Hello there.",
+			"101": "Goodbye.",
+			"999": "I am unused.",
 		}),
 	}
 
@@ -142,9 +142,9 @@ func TestExport_TraOnlyFile_GeneratesExpectedCSV(t *testing.T) {
 	dialogs := d.DByFile{} // no .d for this tra
 
 	tr := tra.TraByFile{
-		"02_Quest.tra": mustMakeTra(t, map[int]string{
-			10: "Alpha",
-			2:  "Beta",
+		"02_Quest.tra": mustMakeTra(t, map[string]string{
+			"10": "Alpha",
+			"2":  "Beta",
 		}),
 	}
 
@@ -214,9 +214,9 @@ func TestExport_GotoFormatting_EXIT_and_EXTERNFallback(t *testing.T) {
 	}
 
 	tr := tra.TraByFile{
-		"03.d": mustMakeTra(t, map[int]string{
-			1: "Bye",
-			2: "Go somewhere",
+		"03.d": mustMakeTra(t, map[string]string{
+			"1": "Bye",
+			"2": "Go somewhere",
 		}),
 	}
 
@@ -283,7 +283,7 @@ func mustReadCSV(t *testing.T, path string) [][]string {
 	return records
 }
 
-func mustMakeTra(t *testing.T, texts map[int]string) tra.Tra {
+func mustMakeTra(t *testing.T, texts map[string]string) tra.Tra {
 	t.Helper()
 	return tra.NewTra(texts)
 }
