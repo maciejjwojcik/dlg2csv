@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	helpers "github.com/maciejjwojcik/dlg2csv/internal/utils"
@@ -16,10 +15,10 @@ import (
 type TraByFile map[string]Tra
 
 type Tra struct {
-	Texts map[int]string
+	Texts map[string]string
 }
 
-func NewTra(texts map[int]string) Tra {
+func NewTra(texts map[string]string) Tra {
 	return Tra{Texts: texts}
 }
 
@@ -82,24 +81,26 @@ func ParseReader(r io.Reader, fileName string) (*Tra, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 
-	out := make(map[int]string)
+	out := make(map[string]string)
 
 	type mode int
 	const (
 		modeNormal mode = iota
 		modeReadMale
+		modeReadMaleQuote
+		modeReadMaleTilde
 	)
 
 	var (
 		m      = modeNormal
-		curID  int
+		curID  string
 		b      strings.Builder
 		lineNo int
 	)
 
 	flushMale := func() error {
 		if _, exists := out[curID]; exists {
-			return &ParseError{File: fileName, Line: lineNo, Msg: fmt.Sprintf("duplicate string id @%d in file", curID)}
+			return &ParseError{File: fileName, Line: lineNo, Msg: fmt.Sprintf("duplicate string id @%s in file", curID)}
 		}
 		out[curID] = b.String()
 		b.Reset()
@@ -122,16 +123,17 @@ func ParseReader(r io.Reader, fileName string) (*Tra, error) {
 
 			afterAt := trim[1:]
 			i := 0
-			for i < len(afterAt) && afterAt[i] >= '0' && afterAt[i] <= '9' {
+			for i < len(afterAt) {
+				ch := afterAt[i]
+				if ch == ' ' || ch == '\t' || ch == '=' {
+					break
+				}
 				i++
 			}
 			if i == 0 {
-				return nil, &ParseError{File: fileName, Line: lineNo, Msg: "expected numeric id after @"}
+				return nil, &ParseError{File: fileName, Line: lineNo, Msg: "expected id after @"}
 			}
-			id, err := strconv.Atoi(afterAt[:i])
-			if err != nil {
-				return nil, &ParseError{File: fileName, Line: lineNo, Msg: "invalid id number"}
-			}
+			id := afterAt[:i]
 
 			rest := strings.TrimSpace(afterAt[i:])
 			eq := strings.Index(rest, "=")
@@ -140,28 +142,42 @@ func ParseReader(r io.Reader, fileName string) (*Tra, error) {
 			}
 			right := strings.TrimSpace(rest[eq+1:])
 
-			if !strings.HasPrefix(right, "~") {
-				return nil, &ParseError{File: fileName, Line: lineNo, Msg: "expected '~' to start string literal"}
+			if !strings.HasPrefix(right, "~") && !strings.HasPrefix(right, `"`) {
+				return nil, &ParseError{File: fileName, Line: lineNo, Msg: `expected '~' or '"' to start string literal`}
 			}
-			right = right[1:] // right represents string contents after the opening ~
 
 			curID = id
 
-			if end := strings.IndexByte(right, '~'); end >= 0 { // closing '~' for the first (male) literal on this line
+			if strings.HasPrefix(right, "~") {
+				right = right[1:]
+				if end := strings.IndexByte(right, '~'); end >= 0 {
+					b.WriteString(right[:end])
+					if err := flushMale(); err != nil {
+						return nil, err
+					}
+					continue
+				}
+				m = modeReadMaleTilde
+				b.WriteString(right)
+				b.WriteString("\n")
+				continue
+			}
+
+			// starts with "
+			right = right[1:]
+			if end := strings.IndexByte(right, '"'); end >= 0 {
 				b.WriteString(right[:end])
-				if err := flushMale(); err != nil { // store parsed male string (and detect duplicate IDs)
+				if err := flushMale(); err != nil {
 					return nil, err
 				}
 				continue
 			}
-
-			// multiline male
-			m = modeReadMale
+			m = modeReadMaleQuote
 			b.WriteString(right)
 			b.WriteString("\n")
 			continue
 
-		case modeReadMale:
+		case modeReadMaleTilde:
 			if end := strings.IndexByte(line, '~'); end >= 0 {
 				b.WriteString(line[:end])
 				if err := flushMale(); err != nil {
@@ -170,7 +186,18 @@ func ParseReader(r io.Reader, fileName string) (*Tra, error) {
 				m = modeNormal
 				continue
 			}
-
+			b.WriteString(line)
+			b.WriteString("\n")
+			continue
+		case modeReadMaleQuote:
+			if before, _, ok := strings.Cut(line, "\""); ok {
+				b.WriteString(before)
+				if err := flushMale(); err != nil {
+					return nil, err
+				}
+				m = modeNormal
+				continue
+			}
 			b.WriteString(line)
 			b.WriteString("\n")
 			continue
@@ -180,8 +207,8 @@ func ParseReader(r io.Reader, fileName string) (*Tra, error) {
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
-	if m == modeReadMale {
-		return nil, &ParseError{File: fileName, Line: lineNo, Msg: fmt.Sprintf("unterminated string literal for @%d", curID)}
+	if m == modeReadMaleTilde || m == modeReadMaleQuote {
+		return nil, &ParseError{File: fileName, Line: lineNo, Msg: fmt.Sprintf("unterminated string literal for @%s", curID)}
 	}
 
 	tra := NewTra(out)
@@ -194,8 +221,9 @@ func (t Tra) GetTextByID(id *int) string {
 		return ""
 	}
 
-	if txt, ok := t.Texts[*id]; ok {
+	key := fmt.Sprintf("%d", *id)
+	if txt, ok := t.Texts[key]; ok {
 		return txt
 	}
-	return fmt.Sprintf("#MISSING(@%d)", *id)
+	return fmt.Sprintf("#MISSING(@%s)", key)
 }

@@ -6,9 +6,9 @@ import (
 )
 
 func TestNewTra(t *testing.T) {
-	texts := map[int]string{
-		1: "one",
-		2: "two",
+	texts := map[string]string{
+		"1": "one",
+		"2": "two",
 	}
 
 	tra := NewTra(texts)
@@ -19,8 +19,8 @@ func TestNewTra(t *testing.T) {
 	if len(tra.Texts) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(tra.Texts))
 	}
-	if tra.Texts[1] != "one" {
-		t.Fatalf("unexpected value for id 1: %q", tra.Texts[1])
+	if tra.Texts["1"] != "one" {
+		t.Fatalf("unexpected value for id 1: %q", tra.Texts["1"])
 	}
 }
 
@@ -37,7 +37,7 @@ func TestTra_GetTextByID(t *testing.T) {
 	}{
 		{
 			name: "nil id returns empty string",
-			tra:  Tra{Texts: map[int]string{1: "hello"}},
+			tra:  Tra{Texts: map[string]string{"1": "hello"}},
 			id:   nil,
 			want: "",
 		},
@@ -49,19 +49,19 @@ func TestTra_GetTextByID(t *testing.T) {
 		},
 		{
 			name: "existing id returns text",
-			tra:  Tra{Texts: map[int]string{1: "hello"}},
+			tra:  Tra{Texts: map[string]string{"1": "hello"}},
 			id:   &id1,
 			want: "hello",
 		},
 		{
 			name: "missing id returns placeholder",
-			tra:  Tra{Texts: map[int]string{1: "hello"}},
+			tra:  Tra{Texts: map[string]string{"1": "hello"}},
 			id:   &idMissing,
 			want: "#MISSING(@999)",
 		},
 		{
 			name: "different existing id",
-			tra:  Tra{Texts: map[int]string{1: "hello", 2: "world"}},
+			tra:  Tra{Texts: map[string]string{"1": "hello", "2": "world"}},
 			id:   &id2,
 			want: "world",
 		},
@@ -81,31 +81,31 @@ func TestParseReader(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
-		want      map[int]string
+		want      map[string]string
 		wantErr   bool
 		errSubstr string
 	}{
 		{
 			name:  "single line",
 			input: "@100 = ~Hello there, stranger.~\n",
-			want:  map[int]string{100: "Hello there, stranger."},
+			want:  map[string]string{"100": "Hello there, stranger."},
 		},
 		{
 			name:  "leading/trailing whitespace and comments",
 			input: "   // comment\n\n   @101   =   ~Hi~   \n",
-			want:  map[int]string{101: "Hi"},
+			want:  map[string]string{"101": "Hi"},
 		},
 		{
 			name:  "female on same line is ignored but male kept",
 			input: "@102 = ~Hello male.~ ~Hello female.~\n",
-			want:  map[int]string{102: "Hello male."},
+			want:  map[string]string{"102": "Hello male."},
 		},
 		{
 			name: "multiline male",
 			input: "@200 = ~Line1\n" +
 				"Line2\n" +
 				"Line3~\n",
-			want: map[int]string{200: "Line1\nLine2\nLine3"},
+			want: map[string]string{"200": "Line1\nLine2\nLine3"},
 		},
 		{
 			name: "multiline male containing @ at line start should not start new entry",
@@ -113,11 +113,29 @@ func TestParseReader(t *testing.T) {
 				"@NOT_AN_ENTRY just text\n" +
 				"Line3~\n" +
 				"@301 = ~Next~\n",
-			want: map[int]string{
-				300: "Line1\n@NOT_AN_ENTRY just text\nLine3",
-				301: "Next",
+			want: map[string]string{
+				"300": "Line1\n@NOT_AN_ENTRY just text\nLine3",
+				"301": "Next",
 			},
 		},
+		{
+			name:  "single line quoted",
+			input: `@700 = "Temple###of###Evening###Glory"` + "\n",
+			want:  map[string]string{"700": "Temple###of###Evening###Glory"},
+		},
+		{
+			name: "multiline quoted",
+			input: "@701 = \"Line1\n" +
+				"Line2\n" +
+				"Line3\"\n",
+			want: map[string]string{"701": "Line1\nLine2\nLine3"},
+		},
+		{
+			name:  "string id",
+			input: "@chapter_1_intro = ~String ID works.~\n",
+			want:  map[string]string{"chapter_1_intro": "String ID works."},
+		},
+
 		{
 			name:      "duplicate id in same file returns error",
 			input:     "@400 = ~A~\n@400 = ~B~\n",
@@ -135,6 +153,12 @@ func TestParseReader(t *testing.T) {
 			input:     "@600 = Hello\n",
 			wantErr:   true,
 			errSubstr: "expected '~'",
+		},
+		{
+			name:      "missing opening delimiter returns error",
+			input:     "@600 = Hello\n",
+			wantErr:   true,
+			errSubstr: "expected",
 		},
 	}
 
@@ -162,10 +186,10 @@ func TestParseReader(t *testing.T) {
 			for id, wantStr := range tt.want {
 				gotStr, ok := got.Texts[id]
 				if !ok {
-					t.Fatalf("missing id %d; got=%v", id, got)
+					t.Fatalf("missing id %s; got=%v", id, got)
 				}
 				if gotStr != wantStr {
-					t.Fatalf("id %d mismatch:\nGOT:\n%q\nWANT:\n%q", id, gotStr, wantStr)
+					t.Fatalf("id %s mismatch:\nGOT:\n%q\nWANT:\n%q", id, gotStr, wantStr)
 				}
 			}
 		})

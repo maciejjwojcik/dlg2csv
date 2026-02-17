@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/maciejjwojcik/dlg2csv/internal/d"
@@ -67,10 +68,26 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 	makeEmptyRow := func() []string {
 		return make([]string, len(header))
 	}
+	sortTraIDs := func(ids []string) {
+		sort.Slice(ids, func(i, j int) bool {
+			ai, aErr := strconv.Atoi(ids[i])
+			aj, bErr := strconv.Atoi(ids[j])
+			if aErr == nil && bErr == nil {
+				return ai < aj
+			}
+			if aErr == nil {
+				return true
+			}
+			if bErr == nil {
+				return false
+			}
+			return ids[i] < ids[j]
+		})
+	}
 
 	// loops over .d files and retrieves values from corresponding .tra
 	for _, k := range dKeys {
-		used := map[int]struct{}{}
+		used := map[string]struct{}{}
 		csvFileName := sanitizeFilename(k) + ".csv"
 		fmt.Println("creating:", csvFileName)
 		f, err := os.Create(csvFileName)
@@ -123,7 +140,7 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 
 		for _, o := range occ {
 			if o.TraID != nil {
-				used[*o.TraID] = struct{}{}
+				used[strconv.Itoa(*o.TraID)] = struct{}{}
 			}
 			row := makeEmptyRow()
 
@@ -157,20 +174,20 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 			}
 		}
 
-		ids := make([]int, 0, len(tra[k].Texts))
+		ids := make([]string, 0, len(tra[k].Texts))
 		for id := range tra[k].Texts {
 			if _, ok := used[id]; ok {
 				continue
 			}
 			ids = append(ids, id)
 		}
-		sort.Ints(ids)
+		sortTraIDs(ids)
 
 		for _, id := range ids {
 			row := makeEmptyRow()
 
 			row[colDialogID] = k
-			row[colNPCStrref] = formatTraID(&id)
+			row[colNPCStrref] = "@" + id
 			row[colNPCText] = tra[k].Texts[id]
 			row[colComment] = "UNUSED IN .D"
 
@@ -218,17 +235,17 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 
 		t := tra[k]
 
-		ids := make([]int, 0, len(t.Texts))
+		ids := make([]string, 0, len(t.Texts))
 		for id := range t.Texts {
 			ids = append(ids, id)
 		}
-		sort.Ints(ids)
+		sortTraIDs(ids)
 
 		for _, id := range ids {
 			row := makeEmptyRow()
 
 			row[colDialogID] = k
-			row[colNPCStrref] = fmt.Sprintf("@%d", id)
+			row[colNPCStrref] = "@" + id
 			row[colNPCText] = t.Texts[id]
 			row[colComment] = "TRA_ONLY"
 
