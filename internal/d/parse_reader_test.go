@@ -900,3 +900,190 @@ END
 		t.Fatalf("expected ToDlg=FATESP, got: %+v", o)
 	}
 }
+
+func TestParseReader_ChainIfMultilineWeight_ReplyAfterEnd(t *testing.T) {
+	input := `
+BEGIN MODNPC
+
+CHAIN IF WEIGHT #-1 ~InParty("NPC_A")
+See("NPC_A")
+!StateCheck("MODNPC",CD_STATE_NOTVALID)
+CombatCounter(0)
+Global("RomanceActive","GLOBAL",1)
+Global("ModConflictFlag","GLOBAL",0)~ THEN MODNPC STATE_CONFLICT1
+@0
+DO ~SetGlobal("ModConflictFlag","GLOBAL",1)~
+== NPC_A @1
+== MODNPC @2
+END
+IF~~THEN REPLY @4 EXTERN NPC_A STATE_CONFLICT2
+IF~~THEN REPLY @5 EXTERN MODNPC STATE_CONFLICT3
+
+CHAIN NPC_A STATE_CONFLICT2
+@6
+EXIT
+
+CHAIN MODNPC STATE_CONFLICT3
+@7
+EXIT
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "multiline_chain_if_anon.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	// Expected:
+	// State STATE_CONFLICT1 (dialog MODNPC):
+	//   0) NPC @0 (speaker MODNPC)
+	//   1) NPC @1 (speaker NPC_A)
+	//   2) NPC @2 (speaker MODNPC)
+	//   3) PC  @4 -> EXTERN NPC_A STATE_CONFLICT2 (replyIndex 0)
+	//   4) PC  @5 -> EXTERN MODNPC STATE_CONFLICT3 (replyIndex 1)
+	//
+	// State STATE_CONFLICT2 (dialog NPC_A):
+	//   5) NPC @6 (auto EXIT)
+	//
+	// State STATE_CONFLICT3 (dialog MODNPC):
+	//   6) NPC @7 (auto EXIT)
+	//
+	// Total: 7 occurrences
+	if len(occ) != 7 {
+		t.Fatalf("expected 7 occurrences, got %d: %+v", len(occ), occ)
+	}
+
+	// 0) @0 NPC in MODNPC / STATE_CONFLICT1
+	if occ[0].Kind != KindNPC || occ[0].TraID == nil || *occ[0].TraID != 0 {
+		t.Fatalf("occ[0] expected NPC @0, got: %+v", occ[0])
+	}
+	if occ[0].Dialog != "MODNPC" || occ[0].State != "STATE_CONFLICT1" || occ[0].SpeakerDlg != "MODNPC" {
+		t.Fatalf("occ[0] dialog/state/speaker mismatch: %+v", occ[0])
+	}
+
+	// 1) @1 NPC interjection by NPC_A
+	if occ[1].Kind != KindNPC || occ[1].TraID == nil || *occ[1].TraID != 1 {
+		t.Fatalf("occ[1] expected NPC @1, got: %+v", occ[1])
+	}
+	if occ[1].Dialog != "MODNPC" || occ[1].State != "STATE_CONFLICT1" || occ[1].SpeakerDlg != "NPC_A" {
+		t.Fatalf("occ[1] dialog/state/speaker mismatch: %+v", occ[1])
+	}
+
+	// 2) @2 NPC in same state
+	if occ[2].Kind != KindNPC || occ[2].TraID == nil || *occ[2].TraID != 2 {
+		t.Fatalf("occ[2] expected NPC @2, got: %+v", occ[2])
+	}
+	if occ[2].Dialog != "MODNPC" || occ[2].State != "STATE_CONFLICT1" || occ[2].SpeakerDlg != "MODNPC" {
+		t.Fatalf("occ[2] dialog/state/speaker mismatch: %+v", occ[2])
+	}
+
+	// 3) @4 PC replyIndex 0 (must attach to CHAIN-created state after END)
+	if occ[3].Kind != KindPC || occ[3].TraID == nil || *occ[3].TraID != 4 {
+		t.Fatalf("occ[3] expected PC @4, got: %+v", occ[3])
+	}
+	if occ[3].Dialog != "MODNPC" || occ[3].State != "STATE_CONFLICT1" {
+		t.Fatalf("occ[3] expected to be in MODNPC/STATE_CONFLICT1, got: %+v", occ[3])
+	}
+	if occ[3].ReplyIndex == nil || *occ[3].ReplyIndex != 0 {
+		t.Fatalf("occ[3] expected ReplyIndex=0, got: %+v", occ[3])
+	}
+	if occ[3].ToType != "EXTERN" || occ[3].ToDlg == nil || *occ[3].ToDlg != "NPC_A" || occ[3].ToState == nil || *occ[3].ToState != "STATE_CONFLICT2" {
+		t.Fatalf("occ[3] extern target mismatch: %+v", occ[3])
+	}
+
+	// 4) @5 PC replyIndex 1
+	if occ[4].Kind != KindPC || occ[4].TraID == nil || *occ[4].TraID != 5 {
+		t.Fatalf("occ[4] expected PC @5, got: %+v", occ[4])
+	}
+	if occ[4].ReplyIndex == nil || *occ[4].ReplyIndex != 1 {
+		t.Fatalf("occ[4] expected ReplyIndex=1, got: %+v", occ[4])
+	}
+	if occ[4].ToType != "EXTERN" || occ[4].ToDlg == nil || *occ[4].ToDlg != "MODNPC" || occ[4].ToState == nil || *occ[4].ToState != "STATE_CONFLICT3" {
+		t.Fatalf("occ[4] extern target mismatch: %+v", occ[4])
+	}
+
+	// 5) @6 NPC in NPC_A / STATE_CONFLICT2 with auto EXIT
+	if occ[5].Kind != KindNPC || occ[5].TraID == nil || *occ[5].TraID != 6 {
+		t.Fatalf("occ[5] expected NPC @6, got: %+v", occ[5])
+	}
+	if occ[5].Dialog != "NPC_A" || occ[5].State != "STATE_CONFLICT2" || occ[5].SpeakerDlg != "NPC_A" {
+		t.Fatalf("occ[5] dialog/state/speaker mismatch: %+v", occ[5])
+	}
+	if occ[5].ToType != "EXIT" {
+		t.Fatalf("occ[5] expected auto EXIT, got: %+v", occ[5])
+	}
+
+	// 6) @7 NPC in MODNPC / STATE_CONFLICT3 with auto EXIT
+	if occ[6].Kind != KindNPC || occ[6].TraID == nil || *occ[6].TraID != 7 {
+		t.Fatalf("occ[6] expected NPC @7, got: %+v", occ[6])
+	}
+	if occ[6].Dialog != "MODNPC" || occ[6].State != "STATE_CONFLICT3" || occ[6].SpeakerDlg != "MODNPC" {
+		t.Fatalf("occ[6] dialog/state/speaker mismatch: %+v", occ[6])
+	}
+	if occ[6].ToType != "EXIT" {
+		t.Fatalf("occ[6] expected auto EXIT, got: %+v", occ[6])
+	}
+}
+
+func TestParseReader_AppendSetsDialogContext_AllowsStateWithoutBegin(t *testing.T) {
+	input := `
+APPEND MODNPC
+IF ~~ THEN BEGIN APPEND_STATE_1
+SAY @10
+EXIT
+END
+END
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "append_no_begin.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	// Expected:
+	// 0) NPC @10 in dialog MODNPC / state APPEND_STATE_1 with auto EXIT
+	if len(occ) != 1 {
+		t.Fatalf("expected 1 occurrence, got %d: %+v", len(occ), occ)
+	}
+
+	if occ[0].Kind != KindNPC || occ[0].TraID == nil || *occ[0].TraID != 10 {
+		t.Fatalf("occ[0] expected NPC @10, got: %+v", occ[0])
+	}
+	if occ[0].Dialog != "MODNPC" || occ[0].State != "APPEND_STATE_1" || occ[0].SpeakerDlg != "MODNPC" {
+		t.Fatalf("occ[0] dialog/state/speaker mismatch: %+v", occ[0])
+	}
+	if occ[0].ToType != "EXIT" {
+		t.Fatalf("occ[0] expected auto EXIT, got: %+v", occ[0])
+	}
+}
+
+func TestParseReader_BeginStateSupportsWeightPrefix(t *testing.T) {
+	input := `
+APPEND MODNPC
+IF WEIGHT #-5 ~Global("X","GLOBAL",1)~ THEN BEGIN WEIGHTED_STATE
+SAY @20
+IF ~~ THEN DO ~SetGlobal("X","GLOBAL",0)~ EXIT
+END
+END
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "weighted_begin_state.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	// Expected:
+	// 0) NPC @20 in MODNPC / WEIGHTED_STATE, with auto EXIT from the IF..DO..EXIT line
+	if len(occ) != 1 {
+		t.Fatalf("expected 1 occurrence, got %d: %+v", len(occ), occ)
+	}
+
+	if occ[0].Kind != KindNPC || occ[0].TraID == nil || *occ[0].TraID != 20 {
+		t.Fatalf("occ[0] expected NPC @20, got: %+v", occ[0])
+	}
+	if occ[0].Dialog != "MODNPC" || occ[0].State != "WEIGHTED_STATE" || occ[0].SpeakerDlg != "MODNPC" {
+		t.Fatalf("occ[0] dialog/state/speaker mismatch: %+v", occ[0])
+	}
+	if occ[0].ToType != "EXIT" {
+		t.Fatalf("occ[0] expected auto EXIT, got: %+v", occ[0])
+	}
+}

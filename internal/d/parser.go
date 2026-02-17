@@ -16,8 +16,18 @@ import (
 
 var (
 	// IF ~cond~ THEN BEGIN STATE
+	// IF [WEIGHT #n] ~cond~ THEN BEGIN <state>
+	//
+	// Examples matched:
+	//   IF ~~ THEN BEGIN Hello
+	//   IF ~Global("X","GLOBAL",1)~ THEN BEGIN State
+	//   IF WEIGHT #-5 ~Global("X","GLOBAL",1)~ THEN BEGIN State
+	//
+	// Capturing groups:
+	//   m[1] = condition inside ~ ~ (may be empty / "~~")
+	//   m[2] = state name
 	reBeginState = regexp.MustCompile(
-		`(?i)^\s*IF\s*(~[\s\S]*?~|~~)\s*THEN\s*BEGIN\s+([A-Za-z0-9_#.\-]+)\s*$`,
+		`(?i)^\s*IF(?:\s+WEIGHT\s*#-?\d+)?\s*~(.*?)~\s*THEN\s*BEGIN\s+([A-Za-z0-9_#.\-]+)\s*$`,
 	)
 
 	// SAY @123
@@ -38,18 +48,41 @@ var (
 	rePlus   = regexp.MustCompile(`(?m)(?:^|\s)\+\s*([A-Za-z0-9_#.\-]+)\b`)
 	reExit   = regexp.MustCompile(`(?i)\bEXIT\b`)
 
-	// CHAIN header with optional IF~...~THEN
+	// 1) CHAIN <dlg> <state>
+	//    Examples:
+	//      CHAIN DORN L#XZEDorn1CON2
+	//      CHAIN AC#FPGND strange_woman
 	//
-	// Examples matched:
-	//   CHAIN AC#FPGND strange_woman
-	//   CHAIN IF~Global("X","GLOBAL",1)~THEN AC#FPGND strange_woman
-	//   CHAIN IF ~Global("X","GLOBAL",1)~ THEN AC#FPGND strange_woman
+	// Capturing:
+	//   m[1] = dialog
+	//   m[2] = state
+	reChainPlain = regexp.MustCompile(
+		`(?i)^\s*CHAIN\s+([A-Za-z0-9_#.\-]+)\s+([A-Za-z0-9_#.\-]+)\s*$`,
+	)
+
+	//  2. Start of multiline CHAIN IF (optionally with WEIGHT #...)
+	//     Examples:
+	//     CHAIN IF WEIGHT #-1 ~InParty("DORN")
+	//     CHAIN IF ~Global("X","GLOBAL",1)~ THEN ...
+	//     CHAIN IF WEIGHT #5 ~ ...   (etc)
 	//
-	// Capturing groups:
-	//   m[1] = dialog (e.g. "AC#FPGND")
-	//   m[2] = state  (e.g. "strange_woman")
-	reChainHeader = regexp.MustCompile(
-		`(?i)^\s*CHAIN\s+(?:IF\s*~.*?~\s*THEN\s+)?([A-Za-z0-9_#.\-]+)\s+([A-Za-z0-9_#.\-]+)\s*$`,
+	// No capturing groups; this is just a detector to enter "pendingChainIf" mode.
+	reChainIfStart = regexp.MustCompile(
+		`(?i)^\s*CHAIN\s+IF\b(?:\s+WEIGHT\s*#-?\d+)?\b`,
+	)
+
+	//  3. End of multiline CHAIN IF: the line that contains the closing "~ THEN <dlg> <state>"
+	//     Examples (often the last trigger line):
+	//     Global("L#XZEDornCon","GLOBAL",0)~ THEN L#XZEB L#XZEDorn1CON1
+	//     ... )~THEN BViconi ViconiaL#XZE2Con1
+	//     ... ~   THEN   AC#FPGND strange_woman
+	//
+	// Capturing:
+	//
+	//	m[1] = dialog
+	//	m[2] = state
+	reChainIfEnd = regexp.MustCompile(
+		`(?i)~\s*THEN\s+([A-Za-z0-9_#.\-]+)\s+([A-Za-z0-9_#.\-]+)\s*$`,
 	)
 
 	// NPC line inside CHAIN body: @200
@@ -91,6 +124,20 @@ var (
 	reBeginDlg = regexp.MustCompile(
 		`(?i)^\s*BEGIN\s+~?([A-Za-z0-9_#.\-]+)~?\s*$`,
 	)
+
+	// APPEND header: APPEND <dialog>
+	//
+	// Example matched:
+	//   APPEND WSMITH01
+	//
+	// Semantics:
+	//   Opens an append context for an existing dialog (no BEGIN required).
+	//   Subsequent IF ... THEN BEGIN <state> blocks define new states
+	//   inside this dialog until the matching END.
+	//
+	// Capturing groups:
+	//   m[1] = dialog (e.g. "WSMITH01")
+	reAppendHeader = regexp.MustCompile(`(?i)^\s*APPEND\s+([A-Za-z0-9_#.\-]+)\s*$`)
 )
 
 type mode int
@@ -191,6 +238,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 		pendingNotes       []string
 		stateEntryCond     string
 		pendingChainHeader string
+		pendingChainIf     bool
 
 		mode = modeNormal
 	)
@@ -301,16 +349,68 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				mode = modeNormal
 				continue
 			}
-			if mm := reChainHeader.FindStringSubmatch(line); mm != nil {
-				if currentDialog == "" {
-					currentDialog = mm[1]
+			if pendingChainIf {
+				if mm := reChainIfEnd.FindStringSubmatch(line); mm != nil {
+					dlg := mm[1]
+					st := mm[2]
+
+					currentDialog = dlg
+					currentSpeaker = dlg
+					currentState = st
+					replyIndex = 0
+					inState = true
+					mode = modeChain
+					lastChainTextIdx = -1
+
+					pendingChainIf = false
 				}
-				currentSpeaker = mm[1]
-				currentState = mm[2]
+				continue
+			}
+
+			// --- 2) begin CHAIN IF (may be multiline)
+			if reChainIfStart.MatchString(line) {
+				pendingChainIf = true
+
+				// handle cases "~ THEN <dlg> <state>" is in the same line
+				if mm := reChainIfEnd.FindStringSubmatch(line); mm != nil {
+					dlg := mm[1]
+					st := mm[2]
+
+					currentDialog = dlg
+					currentSpeaker = dlg
+					currentState = st
+					replyIndex = 0
+					inState = true
+					mode = modeChain
+					lastChainTextIdx = -1
+
+					pendingChainIf = false
+				}
+
+				continue
+			}
+
+			// --- 3) Plain CHAIN dlg state
+			if mm := reChainPlain.FindStringSubmatch(line); mm != nil {
+				dlg := mm[1]
+				st := mm[2]
+
+				currentDialog = dlg
+				currentSpeaker = dlg
+				currentState = st
 				replyIndex = 0
 				inState = true
 				mode = modeChain
 				lastChainTextIdx = -1
+				continue
+			}
+
+			if mm := reAppendHeader.FindStringSubmatch(line); mm != nil {
+				currentDialog = mm[1]
+				currentSpeaker = currentDialog
+				currentState = ""
+				inState = false
+				mode = modeNormal
 				continue
 			}
 
