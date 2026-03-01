@@ -1134,3 +1134,45 @@ END
 		t.Fatalf("occ[0] expected condition Global(\"X\",\"GLOBAL\",1), got: %q", occ[0].Condition)
 	}
 }
+
+func TestParseReader_ReplyExit_DoesNotOverwriteState(t *testing.T) {
+	input := `
+BEGIN L#2EDP
+
+CHAIN IF ~Global("X","GLOBAL",1)~ THEN L#2EDP LEAVE.10
+@1
+IF ~~ THEN REPLY @2 DO ~SetGlobal("X","GLOBAL",2)~ EXIT
+IF ~~ THEN REPLY @3 EXIT
+END
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "reply_exit_keeps_state.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	var replies []TextOccurrence
+	for _, o := range occ {
+		if o.Kind == KindPC {
+			replies = append(replies, o)
+		}
+	}
+
+	if len(replies) != 2 {
+		t.Fatalf("expected 2 reply occurrences (@2 and @3), got %d: %+v", len(replies), replies)
+	}
+
+	if replies[0].State != "LEAVE.10" {
+		t.Fatalf("reply @2 state mismatch: got %q want %q (full: %+v)", replies[0].State, "LEAVE.10", replies[0])
+	}
+	if replies[0].ToType != "EXIT" {
+		t.Fatalf("reply @2 ToType mismatch: got %q want %q (full: %+v)", replies[0].ToType, "EXIT", replies[0])
+	}
+
+	if replies[1].State != "LEAVE.10" {
+		t.Fatalf("reply @3 state mismatch: got %q want %q (full: %+v)", replies[1].State, "LEAVE.10", replies[1])
+	}
+	if replies[1].ToType != "EXIT" {
+		t.Fatalf("reply @3 ToType mismatch: got %q want %q (full: %+v)", replies[1].ToType, "EXIT", replies[1])
+	}
+}
