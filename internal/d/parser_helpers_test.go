@@ -5,6 +5,7 @@ import (
 )
 
 func TestSplitLineComment(t *testing.T) {
+	splitter := CommentSplitter{}
 	tests := []struct {
 		name     string
 		in       string
@@ -22,6 +23,12 @@ func TestSplitLineComment(t *testing.T) {
 			in:       `SAY @100 // greeting`,
 			wantCode: `SAY @100`,
 			wantCmt:  `greeting`,
+		},
+		{
+			name:     "comment_marker_at_end",
+			in:       `SAY @100 //`,
+			wantCode: `SAY @100`,
+			wantCmt:  ``,
 		},
 		{
 			name:     "only_comment_line",
@@ -47,11 +54,69 @@ func TestSplitLineComment(t *testing.T) {
 			wantCode: `SAY ~a//b~`,
 			wantCmt:  `real`,
 		},
+		{
+			name:     "double_slash_before_tilde_is_comment",
+			in:       `SAY @100 // x ~y~`,
+			wantCode: `SAY @100`,
+			wantCmt:  `x ~y~`,
+		},
+		{
+			name:     "single_slash_not_comment",
+			in:       `SAY @100 / greeting`,
+			wantCode: `SAY @100 / greeting`,
+			wantCmt:  ``,
+		},
+		{
+			name: "odd_number_of_tildes_disables_comment_parsing_after_it",
+			in:   `SAY ~oops // not comment anymore // real?`,
+			// behavior: once inTilde toggles true and never closes within this line,
+			// we do not treat // as comment in this line
+			wantCode: `SAY ~oops // not comment anymore // real?`,
+			wantCmt:  ``,
+		},
+
+		// --- block comments (/* */) ---
+		{
+			name:     "block_comment_inline_after_code",
+			in:       `@4 /* Great! */`,
+			wantCode: `@4`,
+			wantCmt:  `Great!`,
+		},
+		{
+			name:     "block_comment_only_line",
+			in:       `/* only a note */`,
+			wantCode: ``,
+			wantCmt:  `only a note`,
+		},
+		{
+			name:     "block_comment_inside_tilde_is_not_comment",
+			in:       `SAY ~not a /* comment */~`,
+			wantCode: `SAY ~not a /* comment */~`,
+			wantCmt:  ``,
+		},
+		{
+			name:     "block_comment_inline_after_code",
+			in:       `@4 /* Great! */`,
+			wantCode: `@4`,
+			wantCmt:  `Great!`,
+		},
+		{
+			name:     "double_slash_before_tilde_is_comment",
+			in:       `SAY @100 // x ~y~`,
+			wantCode: `SAY @100`,
+			wantCmt:  `x ~y~`,
+		},
+		{
+			name:     "line_comment_then_block_markers_are_just_text",
+			in:       `SAY @100 // x /* y */`,
+			wantCode: `SAY @100`,
+			wantCmt:  `x /* y */`,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			code, cmt := splitLineComment(tt.in)
+			code, cmt := splitter.Split(tt.in)
 			if code != tt.wantCode {
 				t.Fatalf("code mismatch:\n got: %q\nwant: %q", code, tt.wantCode)
 			}
@@ -59,6 +124,39 @@ func TestSplitLineComment(t *testing.T) {
 				t.Fatalf("comment mismatch:\n got: %q\nwant: %q", cmt, tt.wantCmt)
 			}
 		})
+	}
+}
+
+func TestSplitLineComment_BlockCommentMultiline(t *testing.T) {
+	splitter := CommentSplitter{}
+
+	type step struct {
+		in       string
+		wantCode string
+		wantCmt  string
+	}
+
+	steps := []step{
+		{
+			in:       `SAY @1 /* hello`,
+			wantCode: `SAY @1`,
+			wantCmt:  `hello`,
+		},
+		{
+			in:       `world */ SAY @2`,
+			wantCode: `SAY @2`,
+			wantCmt:  `world`,
+		},
+	}
+
+	for i, st := range steps {
+		code, cmt := splitter.Split(st.in)
+		if code != st.wantCode {
+			t.Fatalf("step %d code mismatch:\n got: %q\nwant: %q", i, code, st.wantCode)
+		}
+		if cmt != st.wantCmt {
+			t.Fatalf("step %d comment mismatch:\n got: %q\nwant: %q", i, cmt, st.wantCmt)
+		}
 	}
 }
 
@@ -150,6 +248,7 @@ func TestIntPtrAndStrPtr(t *testing.T) {
 }
 
 func TestSplitLineComment_ExtraCases(t *testing.T) {
+	splitter := CommentSplitter{}
 	tests := []struct {
 		name     string
 		in       string
@@ -197,7 +296,7 @@ func TestSplitLineComment_ExtraCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			code, cmt := splitLineComment(tt.in)
+			code, cmt := splitter.Split(tt.in)
 			if code != tt.wantCode {
 				t.Fatalf("code mismatch:\n got: %q\nwant: %q", code, tt.wantCode)
 			}

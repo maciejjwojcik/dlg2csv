@@ -258,6 +258,8 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 	)
 	lastChainTextIdx := -1
 
+	splitter := &CommentSplitter{}
+
 	lineNo := 0
 	for sc.Scan() {
 		lineNo++
@@ -265,7 +267,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 
 		switch mode {
 		case modeNormal:
-			line, comment := splitLineComment(raw)
+			line, comment := splitter.Split(raw)
 			line = strings.TrimSpace(line)
 
 			// Handle multi-line CHAIN IF ~...~ THEN ... headers.
@@ -300,7 +302,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				lineNo++ // ważne dla diagnostyki
 
 				raw2 := sc.Text()
-				line2, comment2 := splitLineComment(raw2)
+				line2, comment2 := splitter.Split(raw2)
 
 				// komentarze z kolejnych linii też zachowaj (tak jak inline commenty)
 				if comment2 != "" && currentDialog != "" {
@@ -540,7 +542,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 			}
 
 		case modeChain:
-			line, comment := splitLineComment(raw)
+			line, comment := splitter.Split(raw)
 			line = strings.TrimSpace(line)
 
 			// comment-only line
@@ -578,7 +580,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				lineNo++ // ważne dla diagnostyki
 
 				raw2 := sc.Text()
-				line2, comment2 := splitLineComment(raw2)
+				line2, comment2 := splitter.Split(raw2)
 
 				// komentarze z kolejnych linii też zachowaj (tak jak inline commenty)
 				if comment2 != "" && currentDialog != "" {
@@ -716,7 +718,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 			// Ignore other lines in CHAIN body
 			continue
 		case modeState:
-			line, comment := splitLineComment(raw)
+			line, comment := splitter.Split(raw)
 			line = strings.TrimSpace(line)
 
 			// comment-only line
@@ -755,7 +757,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				lineNo++ // ważne dla diagnostyki
 
 				raw2 := sc.Text()
-				line2, comment2 := splitLineComment(raw2)
+				line2, comment2 := splitter.Split(raw2)
 
 				// komentarze z kolejnych linii też zachowaj (tak jak inline commenty)
 				if comment2 != "" && currentDialog != "" {
@@ -898,34 +900,6 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 		return nil, fmt.Errorf("%s: scan error: %w", fileName, err)
 	}
 	return out, nil
-}
-
-// splitLineComment returns code and trailing // comment.
-// Returned code is already strings.TrimSpace'd.
-func splitLineComment(line string) (code string, comment string) {
-	inTilde := false
-
-	for i := 0; i < len(line)-1; i++ {
-		ch := line[i]
-
-		// toggle ~...~
-		if ch == '~' {
-			inTilde = !inTilde
-			continue
-		}
-
-		// start of // comment (only if not inside ~...~)
-		if !inTilde && ch == '/' && line[i+1] == '/' {
-			code = strings.TrimSpace(line[:i])
-			comment = strings.TrimSpace(line[i+2:])
-			return
-		}
-	}
-
-	// no comment
-	code = strings.TrimSpace(line)
-	comment = ""
-	return
 }
 
 func normalizeCondition(cond string) string {
