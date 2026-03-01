@@ -61,7 +61,7 @@ func TestExport_DialogWithUnusedTra_GeneratesExpectedCSV(t *testing.T) {
 				SpeakerDlg: "AC#TEST",
 				Dialog:     "AC#TEST",
 				State:      "START",
-				Notes:      []string{"CHAIN"},
+				Notes:      []string{"CHAIN", "Hello there."},
 				Condition:  `Global("AC#X","GLOBAL",1)`,
 			},
 			{

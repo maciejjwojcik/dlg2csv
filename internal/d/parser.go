@@ -16,8 +16,18 @@ import (
 
 var (
 	// IF ~cond~ THEN BEGIN STATE
+	// IF [WEIGHT #n] ~cond~ THEN BEGIN <state>
+	//
+	// Examples matched:
+	//   IF ~~ THEN BEGIN Hello
+	//   IF ~Global("X","GLOBAL",1)~ THEN BEGIN State
+	//   IF WEIGHT #-5 ~Global("X","GLOBAL",1)~ THEN BEGIN State
+	//
+	// Capturing groups:
+	//   m[1] = condition inside ~ ~ (may be empty / "~~")
+	//   m[2] = state name
 	reBeginState = regexp.MustCompile(
-		`(?i)^\s*IF\s*(~[\s\S]*?~|~~)\s*THEN\s*BEGIN\s+([A-Za-z0-9_#.\-]+)\s*$`,
+		`(?i)^\s*IF(?:\s+WEIGHT\s*#-?\d+)?\s*~(.*?)~\s*THEN\s*BEGIN\s+([A-Za-z0-9_#.\-]+)\s*$`,
 	)
 
 	// SAY @123
@@ -38,18 +48,41 @@ var (
 	rePlus   = regexp.MustCompile(`(?m)(?:^|\s)\+\s*([A-Za-z0-9_#.\-]+)\b`)
 	reExit   = regexp.MustCompile(`(?i)\bEXIT\b`)
 
-	// CHAIN header with optional IF~...~THEN
+	// 1) CHAIN <dlg> <state>
+	//    Examples:
+	//      CHAIN DORN L#XZEDorn1CON2
+	//      CHAIN AC#FPGND strange_woman
 	//
-	// Examples matched:
-	//   CHAIN AC#FPGND strange_woman
-	//   CHAIN IF~Global("X","GLOBAL",1)~THEN AC#FPGND strange_woman
-	//   CHAIN IF ~Global("X","GLOBAL",1)~ THEN AC#FPGND strange_woman
+	// Capturing:
+	//   m[1] = dialog
+	//   m[2] = state
+	reChainPlain = regexp.MustCompile(
+		`(?i)^\s*CHAIN\s+([A-Za-z0-9_#.\-]+)\s+([A-Za-z0-9_#.\-]+)\s*$`,
+	)
+
+	//  2. Start of multiline CHAIN IF (optionally with WEIGHT #...)
+	//     Examples:
+	//     CHAIN IF WEIGHT #-1 ~InParty("DORN")
+	//     CHAIN IF ~Global("X","GLOBAL",1)~ THEN ...
+	//     CHAIN IF WEIGHT #5 ~ ...   (etc)
 	//
-	// Capturing groups:
-	//   m[1] = dialog (e.g. "AC#FPGND")
-	//   m[2] = state  (e.g. "strange_woman")
-	reChainHeader = regexp.MustCompile(
-		`(?i)^\s*CHAIN\s+(?:IF\s*~.*?~\s*THEN\s+)?([A-Za-z0-9_#.\-]+)\s+([A-Za-z0-9_#.\-]+)\s*$`,
+	// No capturing groups; this is just a detector to enter "pendingChainIf" mode.
+	reChainIfStart = regexp.MustCompile(
+		`(?i)^\s*CHAIN\s+IF\b(?:\s+WEIGHT\s*#-?\d+)?\b`,
+	)
+
+	//  3. End of multiline CHAIN IF: the line that contains the closing "~ THEN <dlg> <state>"
+	//     Examples (often the last trigger line):
+	//     Global("L#XZEDornCon","GLOBAL",0)~ THEN L#XZEB L#XZEDorn1CON1
+	//     ... )~THEN BViconi ViconiaL#XZE2Con1
+	//     ... ~   THEN   AC#FPGND strange_woman
+	//
+	// Capturing:
+	//
+	//	m[1] = dialog
+	//	m[2] = state
+	reChainIfEnd = regexp.MustCompile(
+		`(?i)~\s*THEN\s+([A-Za-z0-9_#.\-]+)\s+([A-Za-z0-9_#.\-]+)\s*$`,
 	)
 
 	// NPC line inside CHAIN body: @200
@@ -90,6 +123,47 @@ var (
 	// m[1] = dlg
 	reBeginDlg = regexp.MustCompile(
 		`(?i)^\s*BEGIN\s+~?([A-Za-z0-9_#.\-]+)~?\s*$`,
+	)
+
+	// APPEND header: APPEND <dialog>
+	//
+	// Example matched:
+	//   APPEND WSMITH01
+	//
+	// Semantics:
+	//   Opens an append context for an existing dialog (no BEGIN required).
+	//   Subsequent IF ... THEN BEGIN <state> blocks define new states
+	//   inside this dialog until the matching END.
+	//
+	// Capturing groups:
+	//   m[1] = dialog (e.g. "WSMITH01")
+	reAppendHeader = regexp.MustCompile(`(?i)^\s*APPEND\s+([A-Za-z0-9_#.\-]+)\s*$`)
+
+	// IF <trigger> <state>  (short state header, without THEN BEGIN)
+	//
+	// Examples matched:
+	//   IF ~~ my_state
+	//   IF ~Global("X","GLOBAL",1)~ my_state
+	//   IF WEIGHT #-5 ~~ my_state
+	//
+	// Capturing groups:
+	//   m[1] = trigger ("~~" or "~...~")
+	//   m[2] = state name
+	reBeginStateShort = regexp.MustCompile(
+		`(?i)^\s*IF(?:\s+WEIGHT\s+#?-?\d+)?\s+(~.*~|~~)\s+([A-Za-z0-9_.#]+)\s*$`,
+	)
+
+	// IF ... THEN DO ~...~ EXIT  (no text)
+	reIfThenDoExit = regexp.MustCompile(`(?i)^\s*IF\b.*\bTHEN\b\s*DO\b.*\bEXIT\b`)
+
+	reThen = regexp.MustCompile(`(?i)\bTHEN\b`)
+
+	reExitOnly   = regexp.MustCompile(`(?i)^\s*EXIT\s*$`)
+	reExternOnly = regexp.MustCompile(`(?i)^\s*EXTERN\s+(\S+)\s+(\S+)\s*$`)
+
+	// m[1]=dlg (PLAYER1), m[2]=state (33), m[3]=interjectLabel (L#2E)
+	reInterjectHeader = regexp.MustCompile(
+		`(?i)^\s*INTERJECT\s+([A-Za-z0-9_#.\-]+)\s+([A-Za-z0-9_#.\-]+)\s+([A-Za-z0-9_#.\-]+)\s*$`,
 	)
 )
 
@@ -191,10 +265,14 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 		pendingNotes       []string
 		stateEntryCond     string
 		pendingChainHeader string
+		pendingChainIf     bool
 
 		mode = modeNormal
 	)
 	lastChainTextIdx := -1
+	inInterject := false
+
+	splitter := &CommentSplitter{}
 
 	lineNo := 0
 	for sc.Scan() {
@@ -203,7 +281,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 
 		switch mode {
 		case modeNormal:
-			line, comment := splitLineComment(raw)
+			line, comment := splitter.Split(raw)
 			line = strings.TrimSpace(line)
 
 			// Handle multi-line CHAIN IF ~...~ THEN ... headers.
@@ -238,7 +316,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				lineNo++ // ważne dla diagnostyki
 
 				raw2 := sc.Text()
-				line2, comment2 := splitLineComment(raw2)
+				line2, comment2 := splitter.Split(raw2)
 
 				// komentarze z kolejnych linii też zachowaj (tak jak inline commenty)
 				if comment2 != "" && currentDialog != "" {
@@ -301,16 +379,69 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				mode = modeNormal
 				continue
 			}
-			if mm := reChainHeader.FindStringSubmatch(line); mm != nil {
-				if currentDialog == "" {
-					currentDialog = mm[1]
+			if pendingChainIf {
+				if mm := reChainIfEnd.FindStringSubmatch(line); mm != nil {
+					dlg := mm[1]
+					st := mm[2]
+
+					currentDialog = dlg
+					currentSpeaker = dlg
+					currentState = st
+					replyIndex = 0
+					inState = true
+					mode = modeChain
+					lastChainTextIdx = -1
+
+					pendingChainIf = false
+					continue
 				}
-				currentSpeaker = mm[1]
-				currentState = mm[2]
+				continue
+			}
+
+			// --- 2) begin CHAIN IF (may be multiline)
+			if reChainIfStart.MatchString(line) {
+				if mm := reChainIfEnd.FindStringSubmatch(line); mm != nil {
+					// single-line CHAIN IF ... THEN ...
+					dlg := mm[1]
+					st := mm[2]
+
+					currentDialog = dlg
+					currentSpeaker = dlg
+					currentState = st
+					replyIndex = 0
+					inState = true
+					mode = modeChain
+					lastChainTextIdx = -1
+
+					pendingChainIf = false
+					continue
+				}
+
+				pendingChainIf = true
+				continue
+			}
+
+			// --- 3) Plain CHAIN dlg state
+			if mm := reChainPlain.FindStringSubmatch(line); mm != nil {
+				dlg := mm[1]
+				st := mm[2]
+
+				currentDialog = dlg
+				currentSpeaker = dlg
+				currentState = st
 				replyIndex = 0
 				inState = true
 				mode = modeChain
 				lastChainTextIdx = -1
+				continue
+			}
+
+			if mm := reAppendHeader.FindStringSubmatch(line); mm != nil {
+				currentDialog = mm[1]
+				currentSpeaker = currentDialog
+				currentState = ""
+				inState = false
+				mode = modeNormal
 				continue
 			}
 
@@ -327,6 +458,21 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				mode = modeState
 				continue
 			}
+			// shorthand: IF ... THEN BEGIN <state>
+			upper := strings.ToUpper(line)
+			if !reThen.MatchString(line) && !strings.Contains(upper, "REPLY") && !strings.Contains(upper, "SAY") && !strings.Contains(upper, "CHAIN") && !strings.Contains(upper, "DO") {
+				if mm := reBeginStateShort.FindStringSubmatch(line); mm != nil {
+					if mm := reBeginStateShort.FindStringSubmatch(line); mm != nil {
+						currentState = mm[2]
+						currentSpeaker = currentDialog
+						stateEntryCond = normalizeCondition(mm[1])
+						replyIndex = 0
+						inState = true
+						mode = modeState
+						continue
+					}
+				}
+			}
 
 			// END closes EXTEND_* block only
 			if strings.EqualFold(line, "END") {
@@ -337,6 +483,25 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 					currentSpeaker = ""
 					currentDialog = ""
 				}
+				if inInterject {
+					inInterject = false
+					continue
+				}
+				continue
+			}
+
+			if mm := reInterjectHeader.FindStringSubmatch(line); mm != nil {
+				dlg := mm[1]
+				st := mm[2]
+
+				currentDialog = dlg
+				currentSpeaker = dlg
+				currentState = st
+				replyIndex = 0
+				inState = true
+
+				inInterject = true
+
 				continue
 			}
 
@@ -365,6 +530,8 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 			// IF ... THEN REPLY @id <rest> (PC line)
 			if mm := reReply.FindStringSubmatch(line); mm != nil {
 				if currentDialog == "" || currentState == "" || !inState {
+					fmt.Printf("REPLY outside state at %s:%d\n  line=%q\n  dlg=%q speaker=%q state=%q mode=%v inState=%v pendingChainIf=%v\n",
+						fileName, lineNo, line, currentDialog, currentSpeaker, currentState, mode, inState, pendingChainIf)
 					return nil, fmt.Errorf("%s:%d: REPLY outside state", fileName, lineNo)
 				}
 
@@ -413,7 +580,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 			}
 
 		case modeChain:
-			line, comment := splitLineComment(raw)
+			line, comment := splitter.Split(raw)
 			line = strings.TrimSpace(line)
 
 			// comment-only line
@@ -451,7 +618,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				lineNo++ // ważne dla diagnostyki
 
 				raw2 := sc.Text()
-				line2, comment2 := splitLineComment(raw2)
+				line2, comment2 := splitter.Split(raw2)
 
 				// komentarze z kolejnych linii też zachowaj (tak jak inline commenty)
 				if comment2 != "" && currentDialog != "" {
@@ -462,38 +629,6 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 			}
 
 			line = strings.TrimSpace(statement)
-
-			// Auto-transition in CHAIN body: EXTERN ... or EXIT
-			// Attach to the last emitted NPC text occurrence in this CHAIN.
-			if mm := reExtern.FindStringSubmatch(line); mm != nil {
-				if lastChainTextIdx < 0 {
-					return nil, fmt.Errorf("%s:%d: EXTERN in CHAIN body without preceding text", fileName, lineNo)
-				}
-				out[lastChainTextIdx].ToType = "EXTERN"
-				out[lastChainTextIdx].ToDlg = strPtr(mm[1])
-				out[lastChainTextIdx].ToState = strPtr(mm[2])
-
-				// CHAIN bodies can end without END (common pattern)
-				mode = modeNormal
-				inState = true
-				lastChainTextIdx = -1
-				continue
-			}
-
-			if reExit.MatchString(line) {
-				if lastChainTextIdx < 0 {
-					return nil, fmt.Errorf("%s:%d: EXIT in CHAIN body without preceding text", fileName, lineNo)
-				}
-				out[lastChainTextIdx].ToType = "EXIT"
-				out[lastChainTextIdx].ToDlg = nil
-				out[lastChainTextIdx].ToState = nil
-
-				// CHAIN bodies can end without END (common pattern)
-				mode = modeNormal
-				inState = true
-				lastChainTextIdx = -1
-				continue
-			}
 
 			// Interjection with IF:
 			// ==JAHEIJ IF ~InParty("JAHEIRA")~ THEN @201
@@ -571,7 +706,71 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				continue
 			}
 
-			if reExit.MatchString(line) {
+			// IF ... THEN REPLY @id <rest>  (REPLY lines are part of CHAIN block)
+			if mm := reReply.FindStringSubmatch(line); mm != nil {
+				if currentDialog == "" || currentState == "" || !inState {
+					return nil, fmt.Errorf("%s:%d: REPLY outside state", fileName, lineNo)
+				}
+
+				cond := normalizeCondition(strings.TrimSpace(mm[1]))
+
+				id, err := strconv.Atoi(mm[2])
+				if err != nil {
+					return nil, fmt.Errorf("%s:%d: invalid TraID in REPLY: %w", fileName, lineNo, err)
+				}
+
+				rest := strings.TrimSpace(mm[3])
+
+				occ := TextOccurrence{
+					TraID:      intPtr(id),
+					Kind:       KindPC,
+					SpeakerDlg: "",
+					Dialog:     currentDialog,
+					State:      currentState,
+					ReplyIndex: intPtr(replyIndex),
+					Condition:  cond,
+					Notes:      pendingNotes,
+				}
+				pendingNotes = nil
+				replyIndex++
+
+				// Target parsing (best-effort)
+				if t := reExtern.FindStringSubmatch(rest); t != nil {
+					occ.ToType = "EXTERN"
+					occ.ToDlg = strPtr(t[1])
+					occ.ToState = strPtr(t[2])
+				} else if t := reGoto.FindStringSubmatch(rest); t != nil {
+					occ.ToType = "GOTO"
+					occ.ToDlg = strPtr(currentDialog)
+					occ.ToState = strPtr(t[1])
+				} else if t := rePlus.FindStringSubmatch(rest); t != nil {
+					occ.ToType = "GOTO"
+					occ.ToDlg = strPtr(currentDialog)
+					occ.ToState = strPtr(t[1])
+				} else if reExit.MatchString(rest) {
+					occ.ToType = "EXIT"
+				}
+
+				out = append(out, occ)
+				continue
+			}
+
+			// Auto-transition in CHAIN body: EXTERN ... or EXIT
+			if mm := reExternOnly.FindStringSubmatch(line); mm != nil {
+				if lastChainTextIdx < 0 {
+					return nil, fmt.Errorf("%s:%d: EXTERN in CHAIN body without preceding text", fileName, lineNo)
+				}
+				out[lastChainTextIdx].ToType = "EXTERN"
+				out[lastChainTextIdx].ToDlg = strPtr(mm[1])
+				out[lastChainTextIdx].ToState = strPtr(mm[2])
+
+				mode = modeNormal
+				inState = true
+				lastChainTextIdx = -1
+				continue
+			}
+
+			if reExitOnly.MatchString(line) {
 				if lastChainTextIdx < 0 {
 					return nil, fmt.Errorf("%s:%d: EXIT in CHAIN body without preceding text", fileName, lineNo)
 				}
@@ -579,7 +778,6 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				out[lastChainTextIdx].ToDlg = nil
 				out[lastChainTextIdx].ToState = nil
 
-				// IMPORTANT: CHAIN body may end here (no END)
 				mode = modeNormal
 				inState = true
 				lastChainTextIdx = -1
@@ -589,7 +787,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 			// Ignore other lines in CHAIN body
 			continue
 		case modeState:
-			line, comment := splitLineComment(raw)
+			line, comment := splitter.Split(raw)
 			line = strings.TrimSpace(line)
 
 			// comment-only line
@@ -628,7 +826,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				lineNo++ // ważne dla diagnostyki
 
 				raw2 := sc.Text()
-				line2, comment2 := splitLineComment(raw2)
+				line2, comment2 := splitter.Split(raw2)
 
 				// komentarze z kolejnych linii też zachowaj (tak jak inline commenty)
 				if comment2 != "" && currentDialog != "" {
@@ -710,6 +908,8 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 			// IF ... THEN REPLY @id <rest>
 			if mm := reReply.FindStringSubmatch(line); mm != nil {
 				if currentDialog == "" || currentState == "" || !inState {
+					fmt.Printf("REPLY outside state at %s:%d\n  line=%q\n  dlg=%q speaker=%q state=%q mode=%v inState=%v pendingChainIf=%v\n",
+						fileName, lineNo, line, currentDialog, currentSpeaker, currentState, mode, inState, pendingChainIf)
 					return nil, fmt.Errorf("%s:%d: REPLY outside state", fileName, lineNo)
 				}
 				cond := normalizeCondition(mm[1])
@@ -755,9 +955,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				continue
 			}
 
-			// IF ~~ THEN DO ~...~ EXIT
-			if strings.Contains(line, "DO") && reExit.MatchString(line) {
-				// traktuj jako EXIT bez tekstu
+			if reIfThenDoExit.MatchString(line) && !strings.Contains(strings.ToUpper(line), "REPLY") {
 				continue
 			}
 
@@ -771,34 +969,6 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 		return nil, fmt.Errorf("%s: scan error: %w", fileName, err)
 	}
 	return out, nil
-}
-
-// splitLineComment returns code and trailing // comment.
-// Returned code is already strings.TrimSpace'd.
-func splitLineComment(line string) (code string, comment string) {
-	inTilde := false
-
-	for i := 0; i < len(line)-1; i++ {
-		ch := line[i]
-
-		// toggle ~...~
-		if ch == '~' {
-			inTilde = !inTilde
-			continue
-		}
-
-		// start of // comment (only if not inside ~...~)
-		if !inTilde && ch == '/' && line[i+1] == '/' {
-			code = strings.TrimSpace(line[:i])
-			comment = strings.TrimSpace(line[i+2:])
-			return
-		}
-	}
-
-	// no comment
-	code = strings.TrimSpace(line)
-	comment = ""
-	return
 }
 
 func normalizeCondition(cond string) string {

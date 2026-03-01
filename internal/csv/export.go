@@ -107,8 +107,17 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 			return fmt.Sprintf("@%d", *id)
 		}
 
-		formatComment := func(o d.TextOccurrence) string {
-			notes := strings.Join(o.Notes, ", ")
+		formatComment := func(o d.TextOccurrence, text string) string {
+			var filtered []string
+
+			for _, note := range o.Notes {
+				if !isDuplicateComment(note, text) {
+					filtered = append(filtered, note)
+				}
+			}
+
+			notes := strings.Join(filtered, ", ")
+
 			if o.Condition == "" {
 				return notes
 			}
@@ -144,13 +153,13 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 			}
 			row := makeEmptyRow()
 
+			text := tra[k].GetTextByID(o.TraID)
+
 			// columns always filled
 			row[colName] = o.SpeakerDlg
 			row[colDialogID] = o.Dialog
 			row[colState] = o.State
-			row[colComment] = formatComment(o)
-
-			text := tra[k].GetTextByID(o.TraID)
+			row[colComment] = formatComment(o, text)
 
 			switch o.Kind {
 			case d.KindNPC:
@@ -275,4 +284,43 @@ func Export(dialogs d.DByFile, tra tra.TraByFile) (ExportResult, error) {
 func sanitizeFilename(s string) string {
 	re := regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 	return re.ReplaceAllString(s, "_")
+}
+
+func isDuplicateComment(comment, english string) bool {
+	nc := normalizeForCompare(comment)
+	ne := normalizeForCompare(english)
+
+	if nc == "" || ne == "" {
+		return false
+	}
+
+	if nc == ne {
+		return true
+	}
+
+	if strings.Contains(nc, ne) || strings.Contains(ne, nc) {
+		return true
+	}
+
+	return false
+}
+
+func normalizeForCompare(s string) string {
+	s = strings.ToLower(s)
+	s = strings.TrimSpace(s)
+	s = strings.Join(strings.Fields(s), " ")
+
+	replacer := strings.NewReplacer(
+		"“", `"`,
+		"”", `"`,
+		"’", `'`,
+		"\"", "",
+		".", "",
+		",", "",
+		"!", "",
+		"?", "",
+	)
+	s = replacer.Replace(s)
+
+	return s
 }
