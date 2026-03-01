@@ -1176,3 +1176,77 @@ END
 		t.Fatalf("reply @3 ToType mismatch: got %q want %q (full: %+v)", replies[1].ToType, "EXIT", replies[1])
 	}
 }
+
+func TestParseReader_BeginStateShortForm_WithWeightAndTildeCond(t *testing.T) {
+	input := `
+APPEND TESTDLG
+IF WEIGHT #-1 ~Global("X","GLOBAL",1)~ TEST_STATE
+SAY @100
+END
+END
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "begin_state_short_weight_tilde.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	if len(occ) != 1 {
+		t.Fatalf("expected 1 occurrence, got %d: %+v", len(occ), occ)
+	}
+
+	o := occ[0]
+
+	if o.Dialog != "TESTDLG" {
+		t.Fatalf("dialog mismatch: got %q want %q", o.Dialog, "TESTDLG")
+	}
+
+	if o.State != "TEST_STATE" {
+		t.Fatalf("state mismatch: got %q want %q", o.State, "TEST_STATE")
+	}
+
+	if o.Condition != `Global("X","GLOBAL",1)` {
+		t.Fatalf("condition mismatch: got %q want %q",
+			o.Condition,
+			`Global("X","GLOBAL",1)`,
+		)
+	}
+
+	if o.TraID == nil || *o.TraID != 100 {
+		t.Fatalf("TraID mismatch: %+v", o)
+	}
+}
+
+func TestParseReader_InterjectHeader_KeepsStateForRepliesAfterEnd(t *testing.T) {
+	input := `
+INTERJECT PC_DLG 33 SOME_LABEL
+== PC_DLG IF ~Global("X","GLOBAL",1)~ THEN
+@100
+END
+IF ~Global("X","GLOBAL",1)~ THEN REPLY @101 EXTERN NPC_DLG NEXT
+IF ~~ THEN REPLY @102 EXIT
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "interject_replies_after_end.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	var replies []TextOccurrence
+	for _, o := range occ {
+		if o.Kind == KindPC {
+			replies = append(replies, o)
+		}
+	}
+
+	if len(replies) != 2 {
+		t.Fatalf("expected 2 replies, got %d: %+v", len(replies), replies)
+	}
+
+	if replies[0].Dialog != "PC_DLG" || replies[0].State != "33" {
+		t.Fatalf("reply[0] dialog/state mismatch: %+v", replies[0])
+	}
+	if replies[1].Dialog != "PC_DLG" || replies[1].State != "33" {
+		t.Fatalf("reply[1] dialog/state mismatch: %+v", replies[1])
+	}
+}

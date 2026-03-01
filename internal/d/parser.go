@@ -150,7 +150,7 @@ var (
 	//   m[1] = trigger ("~~" or "~...~")
 	//   m[2] = state name
 	reBeginStateShort = regexp.MustCompile(
-		`(?i)^\s*IF\s*(~~|~[^~]*~)\s+([A-Za-z0-9_#.\-]+)\s*$`,
+		`(?i)^\s*IF(?:\s+WEIGHT\s+#?-?\d+)?\s+(~.*~|~~)\s+([A-Za-z0-9_.#]+)\s*$`,
 	)
 
 	// IF ... THEN DO ~...~ EXIT  (no text)
@@ -160,6 +160,11 @@ var (
 
 	reExitOnly   = regexp.MustCompile(`(?i)^\s*EXIT\s*$`)
 	reExternOnly = regexp.MustCompile(`(?i)^\s*EXTERN\s+(\S+)\s+(\S+)\s*$`)
+
+	// m[1]=dlg (PLAYER1), m[2]=state (33), m[3]=interjectLabel (L#2E)
+	reInterjectHeader = regexp.MustCompile(
+		`(?i)^\s*INTERJECT\s+([A-Za-z0-9_#.\-]+)\s+([A-Za-z0-9_#.\-]+)\s+([A-Za-z0-9_#.\-]+)\s*$`,
+	)
 )
 
 type mode int
@@ -265,6 +270,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 		mode = modeNormal
 	)
 	lastChainTextIdx := -1
+	inInterject := false
 
 	splitter := &CommentSplitter{}
 
@@ -477,6 +483,25 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 					currentSpeaker = ""
 					currentDialog = ""
 				}
+				if inInterject {
+					inInterject = false
+					continue
+				}
+				continue
+			}
+
+			if mm := reInterjectHeader.FindStringSubmatch(line); mm != nil {
+				dlg := mm[1]
+				st := mm[2]
+
+				currentDialog = dlg
+				currentSpeaker = dlg
+				currentState = st
+				replyIndex = 0
+				inState = true
+
+				inInterject = true
+
 				continue
 			}
 
