@@ -227,16 +227,3 @@ func (t Tra) GetTextByID(id *int) string {
 	}
 	return fmt.Sprintf("#MISSING(@%s)", key)
 }
-
-func readLogicalStateHeader(scanner *bufio.Scanner, firstLine string) string {
-	line := firstLine
-	upper := strings.ToUpper(line)
-
-	for !strings.Contains(upper, "THEN BEGIN") && scanner.Scan() {
-		next := scanner.Text()
-		line += "\n" + next
-		upper = strings.ToUpper(line)
-	}
-
-	return line
-}
