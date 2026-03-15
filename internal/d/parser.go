@@ -27,7 +27,7 @@ var (
 	//   m[1] = condition inside ~ ~ (may be empty / "~~")
 	//   m[2] = state name
 	reBeginState = regexp.MustCompile(
-		`(?i)^\s*IF(?:\s+WEIGHT\s*#-?\d+)?\s*~(.*?)~\s*THEN\s*BEGIN\s+([A-Za-z0-9_#.\-]+)\s*$`,
+		`(?is)^\s*IF(?:\s+WEIGHT\s*#-?\d+)?\s*~([\s\S]*?)~\s*(?:THEN\s*)?BEGIN\s+([A-Za-z0-9_#.\-]+)\s*$`,
 	)
 
 	// SAY @123
@@ -462,6 +462,7 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				mode = modeState
 				continue
 			}
+
 			// shorthand: IF ... THEN BEGIN <state>
 			upper := strings.ToUpper(line)
 			if !reThen.MatchString(line) && !strings.Contains(upper, "REPLY") && !strings.Contains(upper, "SAY") && !strings.Contains(upper, "CHAIN") && !strings.Contains(upper, "DO") {
@@ -475,6 +476,22 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 						mode = modeState
 						continue
 					}
+				}
+			}
+
+			// multiline IF ... THEN BEGIN <state>
+			if currentDialog != "" && couldBeMultilineBeginState(line) {
+				logicalLine, extraLines := readLogicalStateHeader(sc, line)
+
+				if mm := reBeginState.FindStringSubmatch(logicalLine); mm != nil {
+					lineNo += extraLines
+					currentState = mm[2]
+					currentSpeaker = currentDialog
+					stateEntryCond = normalizeCondition(mm[1])
+					replyIndex = 0
+					inState = true
+					mode = modeState
+					continue
 				}
 			}
 
@@ -1020,4 +1037,31 @@ func looksLikeWeiduCode(s string) bool {
 
 func needsMoreTildes(s string) bool {
 	return strings.Count(s, "~")%2 == 1
+}
+
+func couldBeMultilineBeginState(line string) bool {
+	trim := strings.TrimSpace(strings.ToUpper(line))
+	return strings.HasPrefix(trim, "IF ") &&
+		!strings.Contains(trim, "THEN BEGIN") &&
+		!strings.Contains(trim, "THEN REPLY") &&
+		!strings.Contains(trim, "THEN EXTERN") &&
+		!strings.Contains(trim, "THEN EXIT")
+}
+
+func readLogicalStateHeader(scanner *bufio.Scanner, firstLine string) (string, int) {
+	var b strings.Builder
+	b.WriteString(firstLine)
+
+	upper := strings.ToUpper(firstLine)
+	extraLines := 0
+
+	for !strings.Contains(upper, "THEN BEGIN") && scanner.Scan() {
+		next := scanner.Text()
+		extraLines++
+		b.WriteString("\n")
+		b.WriteString(next)
+		upper += "\n" + strings.ToUpper(next)
+	}
+
+	return b.String(), extraLines
 }
