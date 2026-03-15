@@ -1250,3 +1250,42 @@ IF ~~ THEN REPLY @102 EXIT
 		t.Fatalf("reply[1] dialog/state mismatch: %+v", replies[1])
 	}
 }
+
+func TestParseReader_AllowsStatesInsideAppend(t *testing.T) {
+	input := `APPEND ~TESTDLG~
+
+IF ~~ THEN BEGIN State1
+  SAY @1
+  IF ~~ THEN REPLY @2 EXIT
+END
+
+IF ~~ THEN BEGIN State2
+  SAY @3
+  IF ~~ THEN REPLY @4 EXIT
+END
+
+END
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "append_states.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	if len(occ) != 4 {
+		t.Fatalf("expected 4 occurrences, got %d: %+v", len(occ), occ)
+	}
+
+	if occ[0].Dialog != "TESTDLG" || occ[0].State != "State1" || occ[0].Kind != KindNPC {
+		t.Fatalf("occ[0] mismatch: %+v", occ[0])
+	}
+	if occ[1].Dialog != "TESTDLG" || occ[1].State != "State1" || occ[1].Kind != KindPC {
+		t.Fatalf("occ[1] mismatch: %+v", occ[1])
+	}
+	if occ[2].Dialog != "TESTDLG" || occ[2].State != "State2" || occ[2].Kind != KindNPC {
+		t.Fatalf("occ[2] mismatch: %+v", occ[2])
+	}
+	if occ[3].Dialog != "TESTDLG" || occ[3].State != "State2" || occ[3].Kind != KindPC {
+		t.Fatalf("occ[3] mismatch: %+v", occ[3])
+	}
+}

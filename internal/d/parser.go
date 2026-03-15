@@ -137,7 +137,7 @@ var (
 	//
 	// Capturing groups:
 	//   m[1] = dialog (e.g. "WSMITH01")
-	reAppendHeader = regexp.MustCompile(`(?i)^\s*APPEND\s+([A-Za-z0-9_#.\-]+)\s*$`)
+	reAppendHeader = regexp.MustCompile(`(?i)^\s*APPEND\s+(?:~([^~]+)~|([A-Za-z0-9_#.\-]+))\s*$`)
 
 	// IF <trigger> <state>  (short state header, without THEN BEGIN)
 	//
@@ -438,6 +438,10 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 
 			if mm := reAppendHeader.FindStringSubmatch(line); mm != nil {
 				currentDialog = mm[1]
+				if currentDialog == "" {
+					currentDialog = mm[2]
+				}
+
 				currentSpeaker = currentDialog
 				currentState = ""
 				inState = false
