@@ -100,7 +100,7 @@ func ParseReader(r io.Reader, fileName string) (*Tra, error) {
 
 	flushMale := func() error {
 		if _, exists := out[curID]; exists {
-			return &ParseError{File: fileName, Line: lineNo, Msg: fmt.Sprintf("duplicate string id @%s in file", curID)}
+			fmt.Printf("duplicate string id @%s in file", curID)
 		}
 		out[curID] = b.String()
 		b.Reset()

@@ -137,10 +137,9 @@ func TestParseReader(t *testing.T) {
 		},
 
 		{
-			name:      "duplicate id in same file returns error",
-			input:     "@400 = ~A~\n@400 = ~B~\n",
-			wantErr:   true,
-			errSubstr: "duplicate",
+			name:  "duplicate id in same file keeps last value",
+			input: "@400 = ~A~\n@400 = ~B~\n",
+			want:  map[string]string{"400": "B"},
 		},
 		{
 			name:      "unterminated multiline male returns error",
