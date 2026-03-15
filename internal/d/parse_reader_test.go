@@ -1289,3 +1289,46 @@ END
 		t.Fatalf("occ[3] mismatch: %+v", occ[3])
 	}
 }
+
+func TestParseReader_AllowsMultilineBeginStateInsideAppend(t *testing.T) {
+	input := `APPEND ~TESTDLG~
+
+IF WEIGHT #-1
+~Global("X","GLOBAL",1)~ THEN BEGIN State1
+  SAY @1
+  IF ~~ THEN REPLY @2 EXIT
+END
+
+END
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "append_multiline_state_header.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	var npcs []TextOccurrence
+	var pcs []TextOccurrence
+	for _, o := range occ {
+		switch o.Kind {
+		case KindNPC:
+			npcs = append(npcs, o)
+		case KindPC:
+			pcs = append(pcs, o)
+		}
+	}
+
+	if len(npcs) != 1 {
+		t.Fatalf("expected 1 NPC occurrence, got %d: %+v", len(npcs), npcs)
+	}
+	if len(pcs) != 1 {
+		t.Fatalf("expected 1 PC occurrence, got %d: %+v", len(pcs), pcs)
+	}
+
+	if npcs[0].Dialog != "TESTDLG" || npcs[0].State != "State1" {
+		t.Fatalf("npc[0] mismatch: %+v", npcs[0])
+	}
+	if pcs[0].Dialog != "TESTDLG" || pcs[0].State != "State1" {
+		t.Fatalf("pc[0] mismatch: %+v", pcs[0])
+	}
+}
