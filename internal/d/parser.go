@@ -156,8 +156,6 @@ var (
 	// IF ... THEN DO ~...~ EXIT  (no text)
 	reIfThenDoExit = regexp.MustCompile(`(?i)^\s*IF\b.*\bTHEN\b\s*DO\b.*\bEXIT\b`)
 
-	reThen = regexp.MustCompile(`(?i)\bTHEN\b`)
-
 	reExitOnly   = regexp.MustCompile(`(?i)^\s*EXIT\s*$`)
 	reExternOnly = regexp.MustCompile(`(?i)^\s*EXTERN\s+(\S+)\s+(\S+)\s*$`)
 
