@@ -115,7 +115,7 @@ var (
 	// EXTEND_TOP ~SOMEDLG~ some_state
 	// m[1] = dlg, m[2] = state
 	reExtend = regexp.MustCompile(
-		`(?i)^\s*EXTEND_(?:BOTTOM|TOP)\s+(?:~([^~]+)~|([A-Za-z0-9_#.\-]+))\s+([A-Za-z0-9_#.\-]+)(?:\s+#\s*(\d+))?\s*$`,
+		`(?i)^\s*EXTEND_(?:BOTTOM|TOP)\s+(?:~([^~]+)~|([A-Za-z0-9_#.\-]+))\s+([A-Za-z0-9_#.\-]+(?:\s+[A-Za-z0-9_#.\-]+)*)(?:\s+#\s*(\d+))?\s*$`,
 	)
 
 	// BEGIN SOMEDLG
@@ -150,13 +150,11 @@ var (
 	//   m[1] = trigger ("~~" or "~...~")
 	//   m[2] = state name
 	reBeginStateShort = regexp.MustCompile(
-		`(?i)^\s*IF(?:\s+WEIGHT\s+#?-?\d+)?\s+(~.*~|~~)\s+([A-Za-z0-9_.#]+)\s*$`,
+		`(?i)^\s*IF(?:\s+WEIGHT\s+#?-?\d+)?\s+(~.*?~|~~)\s+(?:THEN\s+)?([A-Za-z0-9_.#]+)\s*$`,
 	)
 
 	// IF ... THEN DO ~...~ EXIT  (no text)
 	reIfThenDoExit = regexp.MustCompile(`(?i)^\s*IF\b.*\bTHEN\b\s*DO\b.*\bEXIT\b`)
-
-	reThen = regexp.MustCompile(`(?i)\bTHEN\b`)
 
 	reExitOnly   = regexp.MustCompile(`(?i)^\s*EXIT\s*$`)
 	reExternOnly = regexp.MustCompile(`(?i)^\s*EXTERN\s+(\S+)\s+(\S+)\s*$`)
@@ -368,11 +366,15 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 				if dlg == "" {
 					dlg = strings.TrimSpace(mm[2]) // no tilde
 				}
-				st := strings.TrimSpace(mm[3])
+
+				states := strings.Fields(strings.TrimSpace(mm[3]))
+				if len(states) == 0 {
+					return nil, fmt.Errorf("%s:%d: extend without target state", fileName, lineNo)
+				}
 
 				currentDialog = dlg
 				currentSpeaker = dlg
-				currentState = st
+				currentState = states[0]
 				replyIndex = 0
 				inState = true
 				inExtend = true
@@ -464,21 +466,22 @@ func ParseReader(r io.Reader, fileName string) ([]TextOccurrence, error) {
 			}
 
 			// shorthand: IF ... THEN BEGIN <state>
+			// shorthand: IF ~cond~ [THEN] state
 			upper := strings.ToUpper(line)
-			if !reThen.MatchString(line) && !strings.Contains(upper, "REPLY") && !strings.Contains(upper, "SAY") && !strings.Contains(upper, "CHAIN") && !strings.Contains(upper, "DO") {
+			if !strings.Contains(upper, "REPLY") &&
+				!strings.Contains(upper, "SAY") &&
+				!strings.Contains(upper, "CHAIN") &&
+				!strings.Contains(upper, "DO") {
 				if mm := reBeginStateShort.FindStringSubmatch(line); mm != nil {
-					if mm := reBeginStateShort.FindStringSubmatch(line); mm != nil {
-						currentState = mm[2]
-						currentSpeaker = currentDialog
-						stateEntryCond = normalizeCondition(mm[1])
-						replyIndex = 0
-						inState = true
-						mode = modeState
-						continue
-					}
+					currentState = mm[2]
+					currentSpeaker = currentDialog
+					stateEntryCond = normalizeCondition(mm[1])
+					replyIndex = 0
+					inState = true
+					mode = modeState
+					continue
 				}
 			}
-
 			// multiline IF ... THEN BEGIN <state>
 			if currentDialog != "" && couldBeMultilineBeginState(line) {
 				logicalLine, extraLines := readLogicalStateHeader(sc, line)

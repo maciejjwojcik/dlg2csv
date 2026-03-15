@@ -1332,3 +1332,53 @@ END
 		t.Fatalf("pc[0] mismatch: %+v", pcs[0])
 	}
 }
+
+func TestParseReader_ExtendBottom_AllowsMultilineReplyCondition(t *testing.T) {
+	input := `EXTEND_BOTTOM TESTDLG 1 2
+IF ~OR(2)
+Global("A","GLOBAL",1)
+Global("A","GLOBAL",2)~ THEN REPLY @0 GOTO 7
+END
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "extend_multiline_reply.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	var replies []TextOccurrence
+	for _, o := range occ {
+		if o.Kind == KindPC {
+			replies = append(replies, o)
+		}
+	}
+
+	if len(replies) != 1 {
+		t.Fatalf("expected 1 reply, got %d: %+v", len(replies), replies)
+	}
+
+	if replies[0].Dialog != "TESTDLG" {
+		t.Fatalf("expected dialog TESTDLG, got %+v", replies[0])
+	}
+}
+
+func TestParseReader_BeginStateShortForm_WithThen(t *testing.T) {
+	input := `APPEND TESTDLG
+
+IF ~NumTimesTalkedToGT(0)~ THEN talked_to
+SAY @14
+IF ~~ THEN EXIT
+END
+
+END
+`
+
+	occ, err := ParseReader(strings.NewReader(input), "short_then_state.d")
+	if err != nil {
+		t.Fatalf("ParseReader error: %v", err)
+	}
+
+	if len(occ) == 0 {
+		t.Fatalf("expected occurrences, got 0")
+	}
+}
