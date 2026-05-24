@@ -338,4 +338,13 @@ func TestLooksLikeWeiduCode_ExtraCases(t *testing.T) {
 		{"do_punct_token_false", "DO:", false}, // first token "DO:" != "DO"
 		{"if_punct_token_false", "IF:", false},
 	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := looksLikeWeiduCode(tc.in)
+			if got != tc.want {
+				t.Fatalf("looksLikeWeiduCode(%q)=%v want %v", tc.in, got, tc.want)
+			}
+		})
+	}
 }
